@@ -190,9 +190,9 @@ docdrift init-github-product
 ```
 
 `docdrift init` creates:
-- `.docdrift/config.yaml` — configuration, pre-filled with defaults (see below)
-- `.git/hooks/pre-push` — the local trigger
-- `.docdrift/state/` — tracks the last documented commit (added to
+- `.docdrift/config.yaml`: configuration, pre-filled with defaults (see below)
+- `.git/hooks/pre-push`: the local trigger
+- `.docdrift/state/`: tracks the last documented commit (added to
   `.gitignore` automatically, since it's machine-local information)
 
 Each `init-github-*` command writes the matching file to
