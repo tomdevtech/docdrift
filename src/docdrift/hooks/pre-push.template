@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Copied to .git/hooks/pre-push by `docdrift init`.
+# Invokes the installed docdrift CLI; the actual logic lives in the Python
+# package, not in this hook.
+
+set -e
+
+if ! command -v docdrift &> /dev/null; then
+    echo "[docdrift] CLI not found — skipping. (pip install docdrift?)"
+    exit 0
+fi
+
+docdrift run

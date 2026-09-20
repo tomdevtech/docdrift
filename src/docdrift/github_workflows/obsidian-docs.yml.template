@@ -1,0 +1,43 @@
+# Copied to .github/workflows/ by `docdrift init-github-obsidian`.
+#
+# Alternative to the local pre-push hook: this workflow runs the same docdrift
+# process through GitHub Actions instead of through a local Git hook.
+#
+# IMPORTANT: To access a local LLM (Ollama/LM Studio) and the Obsidian vault,
+# this workflow requires either:
+#   (a) a self-hosted runner on your computer -> adjust `runs-on` below; then
+#       obsidian.access_mode: local works
+#   (b) a GitHub-hosted runner + obsidian.access_mode: rest_api with an
+#       accessible tunnel (see docs/obsidian-rest-api-setup.md)
+#
+# TODO: Store secrets for api_base_url / vault_path / api_key, as appropriate
+# for the access_mode, under "Secrets and variables" in the repository settings.
+
+name: docdrift - obsidian docs
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  update-obsidian-docs:
+    # TODO: Change for a self-hosted runner, e.g. [self-hosted, docdrift]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # docdrift needs the history to calculate the diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install docdrift
+        run: pip install docdrift
+
+      - name: Run docdrift
+        run: docdrift run
+        env: {}
+        # TODO: Add the required environment variables, for example:
+        #   DOCDRIFT_OBSIDIAN_API_KEY: ${{ secrets.OBSIDIAN_REST_API_KEY }}

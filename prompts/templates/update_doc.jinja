@@ -1,0 +1,38 @@
+{# Rendered by playbook_loader / llm_client as the user message.
+   Available variables (TODO: align with the actual implementation):
+     - repo_name
+     - file_path
+     - source_code
+     - diff
+     - existing_doc (may be empty for a new file)
+#}
+# Context
+
+Project: {{ repo_name }}
+File: {{ file_path }}
+
+## Current source code
+
+```
+{{ source_code }}
+```
+
+## Diff since the last documentation run
+
+```diff
+{{ diff }}
+```
+
+{% if existing_doc %}
+## Existing documentation
+
+```markdown
+{{ existing_doc }}
+```
+{% else %}
+## Existing documentation
+
+(None available — new file or first documentation run)
+{% endif %}
+
+Update the documentation according to the playbook.

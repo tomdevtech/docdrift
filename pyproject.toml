@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docdrift"
+version = "0.1.0"
+description = "Plug-and-play project documentation for Obsidian using a local LLM (Ollama/LM Studio)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Name", email = "you@example.com" }
+]
+keywords = ["documentation", "llm", "obsidian", "ollama", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Documentation",
+]
+
+dependencies = [
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "python-frontmatter>=1.1",
+    "jinja2>=3.1",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/<your-user>/docdrift"
+Issues = "https://github.com/<your-user>/docdrift/issues"
+
+# Entry point: makes `docdrift` available as a CLI command after installation
+[project.scripts]
+docdrift = "docdrift.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Include playbooks and hook/workflow templates as non-Python package data
+[tool.setuptools.package-data]
+docdrift = ["playbooks/*.md", "hooks/*.template", "github_workflows/*.template"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

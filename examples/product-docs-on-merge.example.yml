@@ -1,0 +1,35 @@
+# Copied to .github/workflows/ by `docdrift init-github-product`.
+#
+# Does not invoke an LLM directly after a merge to main. Instead, it creates an
+# issue and assigns it to the GitHub Copilot coding agent. The agent works
+# asynchronously in the cloud and opens a PR with the documentation changes.
+#
+# Requirement: The Copilot coding agent must be enabled for the repository and
+# account. Note the limited monthly premium-request budget on the free tier.
+
+name: docdrift - product docs (copilot)
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  create-doc-issue:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create issue and assign to Copilot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          gh issue create \
+            --title "Update product docs for PR #${PR_NUMBER}: ${PR_TITLE}" \
+            --body "Update the product documentation (see docs_paths in .docdrift/config.yaml) for PR #${PR_NUMBER}." \
+            --assignee copilot
+          # TODO: Read docs_paths from .docdrift/config.yaml and reference the
+          # paths explicitly in the issue body instead of only linking to the
+          # configuration.
