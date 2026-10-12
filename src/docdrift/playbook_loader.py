@@ -1,9 +1,16 @@
-"""Select and load the appropriate playbook (system prompt) for a file.
+"""Select and load playbooks (system prompts).
 
-Lookup order (first match wins):
-    1. Project-specific playbook in .docdrift/playbooks/<name>.md
-    2. Bundled default playbook in the docdrift package
+Per-file documentation uses ``base.md`` plus a language playbook. The two
+project-wide stages use a standalone playbook each (``architecture.md`` and
+``adr.md``).
+
+Lookup order for every playbook (first match wins):
+
+1. project-specific override in ``<playbook_dir>/<name>.md`` (config: ``playbook_dir``)
+2. bundled default in the docdrift package
 """
+
+from __future__ import annotations
 
 import importlib.resources
 from pathlib import Path
@@ -15,33 +22,44 @@ EXTENSION_MAP = {
     ".js": "typescript",
 }
 
+# Playbooks that are used on their own, without ``base.md`` prepended.
+STANDALONE = {"architecture", "adr"}
+
 
 def resolve_playbook_name(file_path: Path) -> str:
-    """Determine the appropriate playbook from the file extension."""
+    """Pick the language playbook from the file extension (``fallback`` if unknown)."""
     return EXTENSION_MAP.get(file_path.suffix, "fallback")
 
 
 def _read_playbook(name: str, project_playbook_dir: Path | None) -> str:
     filename = f"{name}.md"
-
     if project_playbook_dir is not None:
         override = project_playbook_dir / filename
         if override.exists():
             return override.read_text(encoding="utf-8")
-
-    # Use importlib.resources.files("docdrift"), not ("docdrift.playbooks"),
-    # because playbooks/ is a data directory inside docdrift rather than a
-    # Python subpackage with an __init__.py. This works for both regular pip
-    # installations and editable installs.
-    package_root = importlib.resources.files("docdrift")
-    return package_root.joinpath("playbooks", filename).read_text(encoding="utf-8")
+    # playbooks/ is a data directory (no __init__.py), hence files("docdrift").
+    return importlib.resources.files("docdrift").joinpath("playbooks", filename).read_text(
+        encoding="utf-8"
+    )
 
 
-def load_playbook(name: str, project_playbook_dir: Path | None = None) -> str:
-    """Load the playbook contents, prepending base.md."""
-    base = _read_playbook("base", project_playbook_dir)
-    if name == "base":
-        return base
+def load_playbook(
+    name: str, project_playbook_dir: Path | None = None, language: str = "English"
+) -> str:
+    """Return the system prompt for ``name``.
 
-    specific = _read_playbook(name, project_playbook_dir)
-    return f"{base}\n\n{specific}"
+    Language playbooks are prefixed with ``base.md``; ``architecture`` and
+    ``adr`` are returned as they are. For a ``language`` other than English an
+    instruction is appended (section names stay English so notes stay uniform).
+    """
+    if name in STANDALONE or name == "base":
+        text = _read_playbook(name, project_playbook_dir)
+    else:
+        base = _read_playbook("base", project_playbook_dir)
+        text = f"{base}\n\n{_read_playbook(name, project_playbook_dir)}"
+    if language and language.strip().lower() != "english":
+        text += (
+            f"\n\n## Language\n\nWrite all prose in {language.strip()}. Keep the section "
+            "headings, the `Title:` line, code identifiers and signatures exactly as specified."
+        )
+    return text

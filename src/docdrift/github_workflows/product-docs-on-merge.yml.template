@@ -1,35 +1,110 @@
 # Copied to .github/workflows/ by `docdrift init-github-product`.
 #
-# Does not invoke an LLM directly after a merge to main. Instead, it creates an
-# issue and assigns it to the GitHub Copilot coding agent. The agent works
-# asynchronously in the cloud and opens a PR with the documentation changes.
+# Merge flow: keeps the product docs (README.md, docs_paths) up to date.
+# After a pull request is merged into main, docdrift computes what changed (git +
+# Python AST, no LLM) and checks whether users could be affected at all. Internal
+# changes stop here. Otherwise the GitHub Copilot coding agent gets an issue: check
+# the docs (with the exact lines that mention changed code), update only what is
+# outdated - or change nothing and say so.
+# Strict separation: Copilot writes product docs only. Technical docs (notes,
+# architecture, ADRs) come from the local flow and live in the Obsidian vault.
+# Reviewing Copilot's pull request is the review of the docs.
 #
-# Requirement: The Copilot coding agent must be enabled for the repository and
-# account. Note the limited monthly premium-request budget on the free tier.
+# Setup:
+#   1. Enable the Copilot coding agent for the repository.
+#   2. Secret DOCDRIFT_COPILOT_TOKEN: a personal access token of a user with
+#      Copilot (fine-grained: Actions, Contents, Issues, Pull requests =
+#      read/write). GitHub does not let GITHUB_TOKEN assign Copilot. Without the
+#      secret the issue is created unassigned and you assign Copilot by hand.
+#   3. Repository variable DOCDRIFT_PIP_SPEC (required): where to install docdrift
+#      from, pinned to a tag or commit, e.g.
+#      "git+https://github.com/<you>/docdrift.git@v0.2.0". Do NOT use plain
+#      "docdrift" - that name on PyPI belongs to a different project.
+#   4. Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).
+#
+# Loops are prevented twice: Copilot's own pull requests (copilot/* branches)
+# are skipped, and documentation files never count as a reason for a task.
 
-name: docdrift - product docs (copilot)
+name: docdrift - product docs on merge (copilot)
 
 on:
   pull_request:
     types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
-  create-doc-issue:
-    if: github.event.pull_request.merged == true
+  copilot-task:
+    if: >-
+      github.event.pull_request.merged == true &&
+      !startsWith(github.event.pull_request.head.ref, 'copilot/')
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Create issue and assign to Copilot
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0  # docdrift needs the history for the diff
+
+      - name: Fetch the pull request head
+        # Works even after the branch was deleted; makes the diff exact for
+        # merge, squash and rebase merges alike.
+        run: git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install docdrift
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          SPEC: ${{ vars.DOCDRIFT_PIP_SPEC }}
         run: |
-          gh issue create \
-            --title "Update product docs for PR #${PR_NUMBER}: ${PR_TITLE}" \
-            --body "Update the product documentation (see docs_paths in .docdrift/config.yaml) for PR #${PR_NUMBER}." \
-            --assignee copilot
-          # TODO: Read docs_paths from .docdrift/config.yaml and reference the
-          # paths explicitly in the issue body instead of only linking to the
-          # configuration.
+          # Never plain "docdrift": that name on PyPI belongs to a different project.
+          if [ -z "$SPEC" ]; then
+            echo "::error::Set the repository variable DOCDRIFT_PIP_SPEC, e.g. git+https://github.com/<you>/docdrift.git@<tag-or-commit>"
+            exit 1
+          fi
+          pip install "$SPEC"
+
+      - name: Build the Copilot task
+        shell: bash
+        env:
+          # Passed through env, never interpolated into the script (injection-safe).
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+          docdrift copilot-task \
+            --pr "$PR_NUMBER" --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --title "$PR_TITLE" --head-ref "$HEAD_REF" \
+            --body-file "$RUNNER_TEMP/pr-body.md" \
+            --output "$RUNNER_TEMP/issue.json"
+
+      - name: Create the issue and assign Copilot
+        shell: bash  # -eo pipefail
+        env:
+          COPILOT_TOKEN: ${{ secrets.DOCDRIFT_COPILOT_TOKEN }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          issue="$RUNNER_TEMP/issue.json"
+          if [ ! -f "$issue" ]; then
+            echo "docdrift: nothing to document for this merge."
+            exit 0
+          fi
+          if [ -n "$COPILOT_TOKEN" ]; then
+            GH_TOKEN="$COPILOT_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
+              --input "$issue" --jq '"Issue created: " + .html_url'
+          else
+            echo "::warning::DOCDRIFT_COPILOT_TOKEN is not set - the issue is created without assignee. Assign it to Copilot manually."
+            python -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("assignees",None); print(json.dumps(d))' "$issue" \
+              | GH_TOKEN="$FALLBACK_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
+                  --input - --jq '"Issue created: " + .html_url'
+          fi

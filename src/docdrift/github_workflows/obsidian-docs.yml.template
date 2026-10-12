@@ -1,17 +1,17 @@
 # Copied to .github/workflows/ by `docdrift init-github-obsidian`.
 #
-# Alternative to the local pre-push hook: this workflow runs the same docdrift
-# process through GitHub Actions instead of through a local Git hook.
+# Alternative trigger for the technical docs (Obsidian): the same `docdrift run`
+# as the local pre-push hook, but in GitHub Actions on every push to main.
 #
-# IMPORTANT: To access a local LLM (Ollama/LM Studio) and the Obsidian vault,
-# this workflow requires either:
-#   (a) a self-hosted runner on your computer -> adjust `runs-on` below; then
-#       obsidian.access_mode: local works
-#   (b) a GitHub-hosted runner + obsidian.access_mode: rest_api with an
-#       accessible tunnel (see docs/obsidian-rest-api-setup.md)
+# The run needs the local LLM (Ollama / LM Studio) and the vault, so use either
+#   (a) a self-hosted runner on the machine with LLM and vault -> change
+#       `runs-on` below; obsidian.access_mode: local works, or
+#   (b) a GitHub-hosted runner + obsidian.access_mode: rest_api, with LLM and
+#       Obsidian reachable through a tunnel (docs/obsidian-rest-api-setup.md).
 #
-# TODO: Store secrets for api_base_url / vault_path / api_key, as appropriate
-# for the access_mode, under "Secrets and variables" in the repository settings.
+# The runner keeps no docdrift state between runs (checkout cleans ignored
+# files), so the range is passed explicitly: from the previous main commit.
+# Requires the repository variable DOCDRIFT_PIP_SPEC, see the merge workflow.
 
 name: docdrift - obsidian docs
 
@@ -21,23 +21,37 @@ on:
 
 jobs:
   update-obsidian-docs:
-    # TODO: Change for a self-hosted runner, e.g. [self-hosted, docdrift]
+    # For a self-hosted runner, e.g.: runs-on: [self-hosted, docdrift]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # docdrift needs the history to calculate the diff
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install docdrift
-        run: pip install docdrift
+        shell: bash
+        env:
+          SPEC: ${{ vars.DOCDRIFT_PIP_SPEC }}
+        run: |
+          # Never plain "docdrift": that name on PyPI belongs to a different project.
+          if [ -z "$SPEC" ]; then
+            echo "::error::Set the repository variable DOCDRIFT_PIP_SPEC, e.g. git+https://github.com/<you>/docdrift.git@<tag-or-commit>"
+            exit 1
+          fi
+          pip install "$SPEC"
 
       - name: Run docdrift
-        run: docdrift run
-        env: {}
-        # TODO: Add the required environment variables, for example:
-        #   DOCDRIFT_OBSIDIAN_API_KEY: ${{ secrets.OBSIDIAN_REST_API_KEY }}
+        env:
+          BEFORE: ${{ github.event.before }}
+          # Only for access_mode: rest_api (config: rest_api_key: "${OBSIDIAN_REST_API_KEY}")
+          OBSIDIAN_REST_API_KEY: ${{ secrets.OBSIDIAN_REST_API_KEY }}
+        run: |
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            docdrift run --from "$BEFORE"
+          else
+            docdrift run   # first push of the branch: document everything
+          fi

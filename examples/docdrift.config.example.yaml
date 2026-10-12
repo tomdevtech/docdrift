@@ -1,0 +1,58 @@
+# Installed as .docdrift/config.yaml in the target project.
+# `docdrift init` creates a copy with sensible defaults.
+
+repo_name: "my-project"
+
+# Local OpenAI-compatible LLM server
+# Ollama default:    http://localhost:11434/v1
+# LM Studio default: http://localhost:1234/v1
+api_base_url: "http://localhost:11434/v1"
+model: "qwen2.5-coder:14b"
+
+# Upper bound for one LLM prompt in characters (~4 characters per token).
+# Keep it well below the context length configured in Ollama / LM Studio:
+#   context 4096 tokens -> about 6000; 8192 -> 12000 (default); 16384 -> 30000
+max_prompt_chars: 12000
+
+# Language of the notes in the vault (headings stay English), e.g. "German".
+language: "English"
+
+# --- Local flow: technical docs -> Obsidian ---
+obsidian:
+  # "local"    -> direct file access (hook or self-hosted runner on the vault machine)
+  # "rest_api" -> "Local REST API" plugin + tunnel (Obsidian must be open)
+  access_mode: "local"
+  vault_path: "~/ObsidianVault"            # vault ROOT (must exist); notes go to <vault>/Projects/<repo>/
+  rest_api_base_url: "https://<tailscale-hostname>:27124"
+  rest_api_key: "${OBSIDIAN_REST_API_KEY}"  # from an environment variable, never plain text
+  rest_api_verify: true                     # false or ".docdrift/obsidian.crt" for the plugin's self-signed certificate
+
+# Project-wide overview note (_Architecture.md): module map, components, data flow.
+architecture_note: true
+
+# Architecture Decision Records (technical docs): drafted by the local LLM into
+# the vault (Projects/<repo>/ADR/), only for significant changes. Never by Copilot.
+adr:
+  enabled: true
+  threshold: 4           # minimum significance score (see docs/how-it-works.md)
+
+# --- Merge flow: product docs ONLY -> Copilot coding agent (docdrift init-github-product) ---
+github_docs:
+  enabled: true          # after each merge: check README / docs_paths and update if needed
+  precheck: true         # skip merges users cannot notice (saves Copilot requests); false = always ask
+  assignee: "copilot"    # the coding agent; or any GitHub login
+  docs_paths:
+    - "docs/"
+    - "README.md"
+
+# Optional: custom playbooks override the bundled defaults (base, python,
+# typescript, fallback, architecture, adr)
+# playbook_dir: ".docdrift/playbooks"
+
+# Files/directories that are never documented (.docdrift/ is always ignored)
+ignore:
+  - "tests/"
+  - "docs/"
+  - "*.md"
+  - "*.lock"
+  - ".github/"

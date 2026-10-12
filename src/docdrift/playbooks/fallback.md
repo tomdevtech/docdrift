@@ -1,6 +1,6 @@
-## Generic guidance (no language-specific playbook available)
+## Generic guidance (no language-specific playbook)
 
 - Describe the file as accurately as its contents allow.
-- If the file type is not clearly code, such as a configuration file, focus on
-  its purpose and relevant settings instead of a traditional "Public
-  interface" section.
+- For configuration or data files, focus on purpose and relevant settings instead
+  of a classic "Public interface" section.
+- No structural analysis is available for these files: rely on the diff.

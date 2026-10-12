@@ -1,13 +1,39 @@
 #!/usr/bin/env bash
-# Copied to .git/hooks/pre-push by `docdrift init`.
-# Invokes the installed docdrift CLI; the actual logic lives in the Python
-# package, not in this hook.
+# Installed as .git/hooks/pre-push by `docdrift init` (re-run it after reinstalling).
+#
+# Documentation must never block or slow down a push: docdrift runs in the
+# background and appends its output to .docdrift/logs/docdrift.log.
+#   DOCDRIFT_SYNC=1 git push    -> run in the foreground and see the output
+#   DOCDRIFT_SKIP=1 git push    -> skip documentation for this push
 
-set -e
+[ "${DOCDRIFT_SKIP:-0}" = "1" ] && exit 0
 
-if ! command -v docdrift &> /dev/null; then
-    echo "[docdrift] CLI not found — skipping. (pip install docdrift?)"
+PYTHON="__PYTHON__"   # interpreter docdrift is installed in (written by `docdrift init`)
+if "$PYTHON" -c "import docdrift" > /dev/null 2>&1; then
+    RUN=("$PYTHON" -m docdrift)
+elif command -v docdrift > /dev/null 2>&1; then
+    RUN=(docdrift)
+else
+    echo "[docdrift] not installed for $PYTHON - skipping. Reinstall, then run 'docdrift init'."
     exit 0
 fi
 
-docdrift run
+ROOT="$(git rev-parse --show-toplevel)"
+LOG="$ROOT/.docdrift/logs/docdrift.log"
+mkdir -p "$(dirname "$LOG")"
+# Keep the log small: rotate at about 1 MB.
+if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1000000 ]; then mv -f "$LOG" "$LOG.1"; fi
+
+if [ "${DOCDRIFT_SYNC:-0}" = "1" ]; then
+    (cd "$ROOT" && "${RUN[@]}" run) || echo "[docdrift] run failed - push continues, retried next time."
+else
+    (
+        cd "$ROOT" || exit 0
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') pre-push ==="
+        "${RUN[@]}" run
+        echo "=== exit $? ==="
+    ) >> "$LOG" 2>&1 < /dev/null &
+    disown 2> /dev/null || true
+    echo "[docdrift] documenting in the background - log: .docdrift/logs/docdrift.log"
+fi
+exit 0

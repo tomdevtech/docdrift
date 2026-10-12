@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tests and tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editor
+.vscode/
+.idea/
+
+# docdrift runtime data in target projects (if this repository itself is used
+# as a test project)
+.docdrift/state/
+.docdrift/logs/
+
+# OS
+.DS_Store
