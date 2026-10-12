@@ -17,7 +17,7 @@ Signals that the docs *may* need an update (each becomes a "reason"):
   catches behaviour changes behind an unchanged signature
 
 The mentions are passed on to Copilot as exact ``file:line`` starting points.
-Pure functions, no git calls: :mod:`docdrift.merge` supplies the inputs.
+Pure functions, no git calls: :mod:`docdrift.merge.task` supplies the inputs.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from docdrift.adr import is_manifest
-from docdrift.analysis import API_KINDS, ChangeSet, is_public, module_name
-from docdrift.git_utils import Changes
+from docdrift.core.analysis import API_KINDS, ChangeSet, is_public, module_name
+from docdrift.core.changes import is_manifest
+from docdrift.core.git_utils import Changes
 
 #: Technical documentation that may live in a repository (hand-written ADRs).
 #: Never product docs: Copilot neither reads it as scope nor edits it.

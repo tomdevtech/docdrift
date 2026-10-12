@@ -23,7 +23,7 @@ from urllib.parse import quote
 import frontmatter
 import requests
 
-from docdrift.config import DocdriftConfig
+from docdrift.core.config import DocdriftConfig
 
 AUTO_DOC_MARKER = "<!-- AUTO-DOC-END -->"
 

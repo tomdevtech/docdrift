@@ -98,7 +98,7 @@ so you can see what a typical push scores before changing it.
 
 ## Custom playbooks
 
-Copy a file from `src/docdrift/playbooks/` to `.docdrift/playbooks/`, set
+Copy a file from `src/docdrift/local/playbooks/` to `.docdrift/playbooks/`, set
 `playbook_dir: ".docdrift/playbooks"` and edit it. Available: `base` (per-file rules),
 `python`, `typescript`, `fallback`, `architecture`, `adr`.
 

@@ -37,8 +37,8 @@ def _read_playbook(name: str, project_playbook_dir: Path | None) -> str:
         override = project_playbook_dir / filename
         if override.exists():
             return override.read_text(encoding="utf-8")
-    # playbooks/ is a data directory (no __init__.py), hence files("docdrift").
-    return importlib.resources.files("docdrift").joinpath("playbooks", filename).read_text(
+    # playbooks/ is a data directory (no __init__.py) inside docdrift.local.
+    return importlib.resources.files("docdrift.local").joinpath("playbooks", filename).read_text(
         encoding="utf-8"
     )
 

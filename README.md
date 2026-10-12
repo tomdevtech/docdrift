@@ -117,7 +117,8 @@ result = run_documentation("path/to/repo")     # reads .docdrift/config.yaml
 print(result.documented, result.architecture_updated, result.adr_drafts)
 ```
 
-The merge flow is available as `docdrift.build_copilot_task(repo, cfg, PullRequest(...))`.
+The merge flow is available as `docdrift.build_copilot_task(repo, cfg, PullRequest(...))`
+(module `docdrift.merge.task`).
 
 `run_documentation` accepts an explicit `cfg`, `client` (any object with
 `chat(messages) -> str`) and `vault`, so it can be embedded or tested without a server.
@@ -145,25 +146,37 @@ All keys are optional except `obsidian`. Full example: [examples/docdrift.config
 
 ```
 src/docdrift/
-  cli.py            commands (thin wrapper)
-  doctor.py         `docdrift check`
-  pipeline.py       local flow: the four stages; library entry point
-  merge.py          merge flow: the Copilot task for a merged PR (no LLM)
-  docs_check.py     merge flow: pre-check - could the docs be outdated?
-  analysis.py       stage 0: AST symbols, change detection, project model
-  adr.py            significance score, ADR drafting
-  vault.py          Obsidian access (local files or REST API)
-  git_utils.py      git CLI wrapper
-  llm_client.py     OpenAI-compatible chat client
-  config.py  state.py  playbook_loader.py
-  playbooks/        prompts (Markdown)      hooks/  github_workflows/  templates
-docs/               usage, how-it-works, setup guides, adr/
+  __init__.py                    public Python API (the only top-level file)
+  core/                          shared - no LLM, no vault, no GitHub
+    config.py                    .docdrift/config.yaml
+    git_utils.py                 git CLI wrapper
+    analysis.py                  AST symbols, change detection, project model
+    changes.py                   commit range -> analysed changes, ignore rules
+  local/                         local flow: technical docs -> Obsidian (local LLM)
+    pipeline.py                  the four stages; library entry point
+    adr.py                       significance score, ADR drafting
+    vault.py  llm_client.py  state.py  playbook_loader.py
+    playbooks/  hooks/  github_workflows/
+  merge/                         merge flow: product docs -> Copilot (no LLM)
+    task.py                      the Copilot issue for a merged PR
+    docs_check.py                pre-check: could the product docs be outdated?
+    github_workflows/
+  setup/                         installation and diagnosis
+    install.py                   config template, pre-push hook, workflows, .gitignore
+    doctor.py                    `docdrift check`
+  cli/                           `docdrift <command>` - thin layer, no logic
+    commands.py  __main__.py
+docs/                            usage, how-it-works, setup guides, adr/
 ```
+
+Every module belongs to a feature. `core` is shared; `local` and `merge` never
+import each other, and only `cli` uses everything (enforced by
+`tests/test_architecture.py`).
 
 ## Development
 
 ```bash
-pytest          # 123 tests, no LLM server, Obsidian or GitHub needed
+pytest          # 132 tests, no LLM server, Obsidian or GitHub needed
 ruff check src tests
 ```
 

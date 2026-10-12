@@ -1,6 +1,6 @@
-"""Tests for docdrift.analysis - the deterministic AST layer."""
+"""Tests for docdrift.core.analysis - the deterministic AST layer."""
 
-from docdrift.analysis import (
+from docdrift.core.analysis import (
     analyze_changes,
     build_project_model,
     file_outline,

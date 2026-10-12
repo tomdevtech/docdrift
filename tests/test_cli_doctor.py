@@ -6,7 +6,8 @@ import time
 import pytest
 from click.testing import CliRunner
 
-from docdrift import cli, doctor
+from docdrift.cli import commands as cli
+from docdrift.setup import doctor
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def test_init_writes_an_lf_hook_with_the_interpreter_path(initialised):
     hook = initialised.root / ".git" / "hooks" / "pre-push"
     raw = hook.read_bytes()
     assert b"\r\n" not in raw and b"__PYTHON__" not in raw
-    assert b"-m docdrift" in raw
+    assert b"-m docdrift.cli" in raw
     gitignore = (initialised.root / ".gitignore").read_text(encoding="utf-8")
     assert ".docdrift/state/" in gitignore and ".docdrift/logs/" in gitignore
 

@@ -1,4 +1,4 @@
-"""Tests for docdrift.merge (merge flow, product docs only) with a real Git repo; no LLM."""
+"""Tests for docdrift.merge.task (merge flow, product docs only) with a real Git repo; no LLM."""
 
 import json
 
@@ -6,8 +6,9 @@ import pytest
 from click.testing import CliRunner
 from conftest import git
 
-from docdrift import cli, merge
-from docdrift.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
+from docdrift.cli import commands as cli
+from docdrift.core.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
+from docdrift.merge import task as merge
 
 CORE = '"""Core."""\ndef work():\n    return 1\n'
 README = "# proj\n\nCall `work()` to do the work.\n"

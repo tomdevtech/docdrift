@@ -7,15 +7,15 @@ Public Python API (the CLI in :mod:`docdrift.cli` is a thin wrapper around it)::
     result = run_documentation("path/to/repo")   # uses .docdrift/config.yaml
     print(result.documented, result.architecture_updated, result.adr_drafts)
 
-The merge flow (GitHub Actions, Copilot) is in :mod:`docdrift.merge`
+The merge flow (GitHub Actions, Copilot) is in :mod:`docdrift.merge.task`
 (``build_copilot_task``).
 """
 
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 
-from docdrift.merge import PullRequest, build_copilot_task
-from docdrift.pipeline import RunResult, draft_adr, run_documentation
+from docdrift.local.pipeline import RunResult, draft_adr, run_documentation
+from docdrift.merge.task import PullRequest, build_copilot_task
 
 try:
     __version__ = _version("docdrift")  # single source: pyproject.toml

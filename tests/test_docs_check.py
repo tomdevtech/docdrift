@@ -1,10 +1,10 @@
-"""Tests for docdrift.docs_check: the pre-check of the merge flow."""
+"""Tests for docdrift.merge.docs_check: the pre-check of the merge flow."""
 
 from pathlib import Path
 
-from docdrift.analysis import analyze_changes
-from docdrift.docs_check import check_docs, find_mentions, is_doc_file
-from docdrift.git_utils import Changes
+from docdrift.core.analysis import analyze_changes
+from docdrift.core.git_utils import Changes
+from docdrift.merge.docs_check import check_docs, find_mentions, is_doc_file
 
 OLD = 'def run_it(path):\n    return 1\n\ndef _helper():\n    return 1\n'
 

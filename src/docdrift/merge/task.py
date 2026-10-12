@@ -4,7 +4,7 @@ Runs in GitHub Actions after a merge into ``main`` (``docdrift copilot-task``,
 installed by ``docdrift init-github-product``). No LLM runs on the runner:
 
 1. **Range** - exactly the pull request's changes (merge base to PR head).
-2. **Pre-check** (:mod:`docdrift.docs_check`) - could the change affect users at
+2. **Pre-check** (:mod:`docdrift.merge.docs_check`) - could the change affect users at
    all? Internal changes (bug fixes inside functions, private code, tests,
    formatting) stop here, so they cost no Copilot request.
 3. **Issue** - otherwise the Copilot coding agent gets an issue: first *check*
@@ -27,10 +27,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from docdrift import git_utils
-from docdrift.config import DocdriftConfig
-from docdrift.docs_check import TECHNICAL_DOC_DIRS, DocsCheck, check_docs, is_doc_file
-from docdrift.pipeline import Log, Snapshot, collect_changes
+from docdrift.core import git_utils
+from docdrift.core.changes import Log, Snapshot, collect_changes
+from docdrift.core.config import DocdriftConfig
+from docdrift.merge.docs_check import TECHNICAL_DOC_DIRS, DocsCheck, check_docs, is_doc_file
 
 #: Login of the Copilot coding agent for the REST API (``assignees``).
 COPILOT_LOGIN = "copilot-swe-agent[bot]"

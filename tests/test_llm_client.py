@@ -1,10 +1,10 @@
-"""Tests for docdrift.llm_client (HTTP mocked)."""
+"""Tests for docdrift.local.llm_client (HTTP mocked)."""
 
 import pytest
 import requests
 
-from docdrift import llm_client
-from docdrift.llm_client import ChatMessage, LLMClient, clean_reply
+from docdrift.local import llm_client
+from docdrift.local.llm_client import ChatMessage, LLMClient, clean_reply
 
 
 class _Resp:

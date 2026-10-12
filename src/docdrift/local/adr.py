@@ -22,15 +22,15 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from docdrift.analysis import ChangeSet
-from docdrift.config import DocdriftConfig
-from docdrift.git_utils import Changes
-from docdrift.llm_client import ChatMessage
-from docdrift.playbook_loader import load_playbook
-from docdrift.state import State
-from docdrift.vault import Vault, adr_note_path
+from docdrift.core.analysis import ChangeSet
+from docdrift.core.changes import is_manifest
+from docdrift.core.config import DocdriftConfig
+from docdrift.core.git_utils import Changes
+from docdrift.local.llm_client import ChatMessage
+from docdrift.local.playbook_loader import load_playbook
+from docdrift.local.state import State
+from docdrift.local.vault import Vault, adr_note_path
 
-_MANIFEST_NAMES = {"pyproject.toml", "setup.cfg", "setup.py", "package.json", "Pipfile"}
 _BREAKING = re.compile(r"BREAKING[ -]CHANGE|^\w+(\([^)]*\))?!:", re.MULTILINE)
 _ARCHITECTURAL = re.compile(r"\b(architecture|redesign|rewrite|migrat\w+)\b", re.IGNORECASE)
 _FEATURE = re.compile(r"^(feat|refactor)(\(|:|!)", re.MULTILINE | re.IGNORECASE)
@@ -45,12 +45,6 @@ class Signal:
 
     points: int
     reason: str
-
-
-def is_manifest(path: Path) -> bool:
-    """True for dependency or packaging manifests (pyproject.toml, package.json, ...)."""
-    name = path.name
-    return name in _MANIFEST_NAMES or (name.startswith("requirements") and name.endswith(".txt"))
 
 
 def assess(changeset: ChangeSet, changes: Changes, commit_messages: list[str]) -> list[Signal]:

@@ -1,8 +1,8 @@
-"""Tests for docdrift.git_utils against a real temporary repository."""
+"""Tests for docdrift.core.git_utils against a real temporary repository."""
 
 from pathlib import Path
 
-from docdrift import git_utils
+from docdrift.core import git_utils
 
 
 def test_get_changes_classifies_added_modified_deleted(repo):

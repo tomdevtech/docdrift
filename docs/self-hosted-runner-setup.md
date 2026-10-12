@@ -14,7 +14,7 @@ workflow, rather than only from the `pre-push` hook.
    GitHub provides a download and configuration script there.
 2. Configure the runner as a background service so it continues to run when
    nobody is logged in.
-3. In `src/docdrift/github_workflows/obsidian-docs.yml.template`, change
+3. In the installed `.github/workflows/obsidian-docs.yml`, change
    `runs-on` from `ubuntu-latest` to a custom label such as
    `[self-hosted, docdrift]`.
 4. Make sure Ollama/LM Studio and Obsidian run on the same machine on which the

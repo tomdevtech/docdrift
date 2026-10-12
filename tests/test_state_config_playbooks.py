@@ -1,10 +1,11 @@
-"""Tests for docdrift.state, docdrift.config and docdrift.playbook_loader."""
+"""Tests for docdrift.local.state, docdrift.core.config and docdrift.local.playbook_loader."""
 
 from pathlib import Path
 
-from docdrift import state
-from docdrift.config import load_config, write_default_config
-from docdrift.playbook_loader import load_playbook, resolve_playbook_name
+from docdrift.core.config import load_config
+from docdrift.local import state
+from docdrift.local.playbook_loader import load_playbook, resolve_playbook_name
+from docdrift.setup.install import install_config as write_default_config
 
 
 def test_state_roundtrip_and_empty_default(tmp_path):

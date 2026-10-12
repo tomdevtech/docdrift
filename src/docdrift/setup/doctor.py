@@ -14,8 +14,8 @@ from pathlib import Path
 
 import requests
 
-from docdrift.config import DocdriftConfig, load_config
-from docdrift.llm_client import ChatMessage, LLMClient
+from docdrift.core.config import DocdriftConfig, load_config
+from docdrift.local.llm_client import ChatMessage, LLMClient
 
 
 @dataclass
@@ -109,7 +109,7 @@ def _hook(repo_root: Path) -> list[Finding]:
     out = []
     if b"\r\n" in raw:
         out.append(Finding("error", "hook", "hook has Windows line endings and will not run - run `docdrift init`"))
-    if b"__PYTHON__" in raw or b"DOCDRIFT_SYNC" not in raw:
+    if b"__PYTHON__" in raw or b"-m docdrift.cli" not in raw:
         out.append(Finding("warn", "hook", "hook is outdated - run `docdrift init`"))
     return out or [Finding("ok", "hook", "pre-push hook installed")]
 

@@ -2,9 +2,9 @@
 
 A run has four stages. Stage 0 is deterministic, stages 1-3 call the LLM:
 
-0. **Analyse**   git diff -> :class:`~docdrift.analysis.ChangeSet` (AST based).
+0. **Analyse**   git diff -> :class:`~docdrift.core.analysis.ChangeSet` (AST based).
 1. **Per file**  one note per changed file (``Projects/<repo>/<file>.md``).
-2. **ADR**       if the change is significant (:func:`docdrift.adr.assess`), draft an ADR.
+2. **ADR**       if the change is significant (:func:`docdrift.local.adr.assess`), draft an ADR.
 3. **Overview**  regenerate ``_Architecture.md`` when the project's public
    structure changed (see :meth:`ProjectModel.fingerprint`).
 
@@ -21,23 +21,22 @@ and :func:`draft_adr`; both can be used directly from Python.
 
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 import frontmatter
 
-from docdrift import adr as adr_module
-from docdrift import analysis, git_utils
-from docdrift import state as state_module
-from docdrift.config import DocdriftConfig, load_config
-from docdrift.llm_client import ChatMessage, LLMClient, LLMUnavailable
-from docdrift.playbook_loader import load_playbook, resolve_playbook_name
-from docdrift.vault import (
+from docdrift.core import analysis, git_utils
+from docdrift.core.changes import Log, Snapshot, collect_changes, should_ignore
+from docdrift.core.config import DocdriftConfig, load_config
+from docdrift.local import adr as adr_module
+from docdrift.local import state as state_module
+from docdrift.local.llm_client import ChatMessage, LLMClient, LLMUnavailable
+from docdrift.local.playbook_loader import load_playbook, resolve_playbook_name
+from docdrift.local.vault import (
     AUTO_DOC_MARKER,
     Vault,
     adr_note_path,
@@ -45,8 +44,6 @@ from docdrift.vault import (
     open_vault,
     resolve_note_path,
 )
-
-Log = Callable[[str], None]
 
 
 @dataclass
@@ -67,33 +64,7 @@ class RunResult:
         return not self.failed
 
 
-@dataclass
-class Snapshot:
-    """Everything known about a commit range before any LLM is involved."""
-
-    changes: git_utils.Changes
-    changeset: analysis.ChangeSet
-    new_sources: dict[str, str]
-
-
 # --- helpers --------------------------------------------------------------------
-
-
-#: docdrift's own files are never documented, whatever the user's ``ignore`` list says.
-ALWAYS_IGNORED = [".docdrift/"]
-
-
-def should_ignore(path: Path, patterns: list[str]) -> bool:
-    """True if ``path`` matches an ignore glob or lies below an ignored directory."""
-    text = path.as_posix()
-    return any(
-        fnmatch.fnmatch(text, p) or text.startswith(p.rstrip("/") + "/")
-        for p in [*patterns, *ALWAYS_IGNORED]
-    )
-
-
-def _is_text(content: str) -> bool:
-    return "\0" not in content
 
 
 def _strip_fence(text: str) -> str:
@@ -163,46 +134,6 @@ def build_file_prompt(
 
     budget = max(limit - len(assemble(shrunk_source, "", "")), 2000)
     return assemble(shrunk_source, _cut(diff, budget // 2), _cut(existing, budget // 2))
-
-
-def collect_changes(
-    repo_root: Path,
-    cfg: DocdriftConfig,
-    from_sha: str,
-    to_sha: str,
-    extra_ignore: list[str] | None = None,
-) -> Snapshot | None:
-    """Stage 0: diff the range and analyse it. ``None`` if nothing relevant changed.
-
-    ``extra_ignore`` adds patterns on top of ``cfg.ignore`` (the merge flow uses it
-    to leave out the documentation files themselves).
-    """
-    raw = git_utils.get_changes(repo_root, from_sha, to_sha)
-    patterns = [*cfg.ignore, *(extra_ignore or [])]
-
-    def wanted(paths: list[Path], sha: str) -> dict[str, str]:
-        out = {}
-        for p in paths:
-            content = git_utils.read_file(repo_root, p, sha)
-            if content is not None and _is_text(content):
-                out[p.as_posix()] = content
-        return out
-
-    kept = git_utils.Changes(
-        added=[p for p in raw.added if not should_ignore(p, patterns)],
-        modified=[p for p in raw.modified if not should_ignore(p, patterns)],
-        deleted=[p for p in raw.deleted if not should_ignore(p, patterns)],
-    )
-    new_sources = wanted(kept.existing, to_sha)
-    old_sources = wanted(kept.modified + kept.deleted, from_sha)
-
-    # Drop binary files from the change lists.
-    kept.added = [p for p in kept.added if p.as_posix() in new_sources]
-    kept.modified = [p for p in kept.modified if p.as_posix() in new_sources]
-    kept.deleted = [p for p in kept.deleted if p.as_posix() in old_sources]
-    if not kept.all:
-        return None
-    return Snapshot(kept, analysis.analyze_changes(old_sources, new_sources), new_sources)
 
 
 def _project_model(repo_root: Path, cfg: DocdriftConfig, sha: str) -> analysis.ProjectModel:

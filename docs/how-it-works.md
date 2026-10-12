@@ -13,7 +13,7 @@ A run (`docdrift run`, or `run_documentation()` from Python) covers a commit ran
 from the last fully documented commit to `HEAD`. On the very first run the range
 starts at Git's empty tree, so *every* file of the repository is documented.
 
-### Stage 0 - deterministic analysis (`analysis.py`)
+### Stage 0 - deterministic analysis (`core/`)
 
 No LLM, no I/O; works on source strings.
 
@@ -54,7 +54,7 @@ existing note (without your manual section) and the source. If it exceeds
 existing note are cut. The reply is written to `Projects/<repo>/<file>.md`; docdrift
 sets the front matter itself (the model must not invent dates).
 
-### Stage 2 - ADR drafts (`adr.py`)
+### Stage 2 - ADR drafts (`local/adr.py`)
 
 Whether a change deserves an ADR is decided by points, not by the model:
 
@@ -87,7 +87,7 @@ The model writes overview, components and data flow from the module outline; the
 **module map is drawn from the import graph without the model**, so it cannot contain
 invented edges.
 
-## Merge flow (`merge.py`, `docs_check.py`)
+## Merge flow (`merge/task.py`, `merge/docs_check.py`)
 
 Purpose: keep the product docs (`README.md`, `docs_paths`) up to date after every merge
 into `main`. `docdrift copilot-task` runs in GitHub Actions; there is no LLM on the runner.
@@ -97,7 +97,7 @@ into `main`. `docdrift copilot-task` runs in GitHub Actions; there is no LLM on 
 2. **Filter:** `ignore`, `docs_paths`, `docs/adr/` and `.github/` are left out. If
    nothing is left, there is no task - so Copilot's docs PR cannot trigger the next
    one. PRs from `copilot/*` branches are skipped as well.
-3. **Pre-check** (`docs_check.py`) collects *hints* that users could notice the change:
+3. **Pre-check** (`merge/docs_check.py`) collects *hints* that users could notice the change:
 
    | Hint | Example |
    |---|---|

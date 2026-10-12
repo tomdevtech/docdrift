@@ -9,24 +9,25 @@ Commands:
     docdrift adr                    draft an ADR for a commit range
     docdrift copilot-task           (CI) build the Copilot issue for a merged pull request
 
-All logic lives in :mod:`docdrift.pipeline` and :mod:`docdrift.merge`; this
-module only parses arguments, installs files and prints progress.
+All logic lives in the feature packages - :mod:`docdrift.local`,
+:mod:`docdrift.merge` and :mod:`docdrift.setup`; this module only parses
+arguments and prints progress.
 """
 
 from __future__ import annotations
 
-import importlib.resources
 import json
-import stat
 import subprocess
 import sys
 from pathlib import Path
 
 import click
 
-from docdrift import config as config_module
-from docdrift import doctor, merge, pipeline
-from docdrift.state import RunLocked
+from docdrift.core import config as config_module
+from docdrift.local import pipeline
+from docdrift.local.state import RunLocked
+from docdrift.merge import task as merge
+from docdrift.setup import doctor, install
 
 
 def _find_repo_root() -> Path:
@@ -42,48 +43,6 @@ def _find_repo_root() -> Path:
     return Path(output)
 
 
-def _template(*parts: str) -> str:
-    return importlib.resources.files("docdrift").joinpath(*parts).read_text(encoding="utf-8")
-
-
-def _write_lf(path: Path, text: str) -> None:
-    """Write with LF line endings on every OS - a CRLF shell hook does not even start."""
-    path.write_text(text, encoding="utf-8", newline="\n")
-
-
-def _hook_script() -> str:
-    """The pre-push hook, pointing at the interpreter docdrift is installed in.
-
-    Hooks also run from IDEs and Git GUIs where the virtualenv is not activated,
-    so the absolute interpreter path is more reliable than ``docdrift`` on PATH.
-    """
-    python = Path(sys.executable).as_posix()  # forward slashes work in Git Bash too
-    for ch in ('\\', '"', "$", "`"):
-        python = python.replace(ch, "\\" + ch)
-    return _template("hooks", "pre-push.template").replace("__PYTHON__", python)
-
-
-def _ensure_gitignore_entry(repo_root: Path, entry: str) -> None:
-    """Add ``entry`` to ``.gitignore`` unless it is already there.
-
-    Keeps the machine-local state (last documented commit) out of version control.
-    """
-    path = repo_root / ".gitignore"
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    if entry in existing.splitlines():
-        return
-    separator = "\n" if existing and not existing.endswith("\n") else ""
-    with path.open("a", encoding="utf-8") as f:
-        f.write(f"{separator}{entry}\n")
-
-
-def _install_workflow(repo_root: Path, template: str, target: str) -> None:
-    target_dir = repo_root / ".github" / "workflows"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    _write_lf(target_dir / target, _template("github_workflows", template))
-    click.echo(f"Workflow installed: {target_dir / target}")
-
-
 @click.group()
 @click.version_option()
 def main() -> None:
@@ -93,21 +52,11 @@ def main() -> None:
 @main.command()
 def init() -> None:
     """Create the config and install the local pre-push hook (local flow)."""
-    repo_root = _find_repo_root()
-    click.echo(f"Configuration: {config_module.write_default_config(repo_root)}")
-
-    hook = repo_root / ".git" / "hooks" / "pre-push"
-    if hook.exists() and "docdrift" not in hook.read_text(encoding="utf-8", errors="replace"):
-        backup = hook.with_name("pre-push.bak")
-        hook.replace(backup)
+    config, hook, backup = install.install_local(_find_repo_root())
+    click.echo(f"Configuration: {config}")
+    if backup:
         click.echo(f"Existing pre-push hook saved as {backup.name}")
-    _write_lf(hook, _hook_script())
-    hook.chmod(hook.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     click.echo(f"Git hook installed: {hook}")
-
-    (repo_root / ".docdrift" / "state").mkdir(parents=True, exist_ok=True)
-    _ensure_gitignore_entry(repo_root, ".docdrift/state/")
-    _ensure_gitignore_entry(repo_root, ".docdrift/logs/")
     click.echo(
         "Done. Review .docdrift/config.yaml, then run `docdrift check` and a first "
         "`docdrift run` in the foreground."
@@ -117,7 +66,8 @@ def init() -> None:
 @main.command("init-github-obsidian")
 def init_github_obsidian() -> None:
     """Install the GitHub Actions workflow for the local flow (Obsidian docs)."""
-    _install_workflow(_find_repo_root(), "obsidian-docs.yml.template", "obsidian-docs.yml")
+    target = install.install_workflow(_find_repo_root(), "local", "obsidian-docs")
+    click.echo(f"Workflow installed: {target}")
     click.echo(
         "Note: review the runner setting in the workflow "
         "(docs/self-hosted-runner-setup.md, docs/obsidian-rest-api-setup.md)."
@@ -128,7 +78,8 @@ def init_github_obsidian() -> None:
 def init_github_product() -> None:
     """Install the merge workflow: Copilot keeps README/docs up to date after each merge."""
     repo_root = _find_repo_root()
-    _install_workflow(repo_root, "product-docs-on-merge.yml.template", "product-docs-on-merge.yml")
+    target = install.install_workflow(repo_root, "merge", "product-docs-on-merge")
+    click.echo(f"Workflow installed: {target}")
     click.echo(
         "Next steps:\n"
         "  1. Enable the Copilot coding agent for this repository.\n"

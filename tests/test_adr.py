@@ -1,15 +1,15 @@
-"""Tests for docdrift.adr: significance scoring, draft parsing and numbering."""
+"""Tests for docdrift.local.adr: significance scoring, draft parsing and numbering."""
 
 from pathlib import Path
 
 import pytest
 
-from docdrift import adr
-from docdrift.analysis import analyze_changes
-from docdrift.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
-from docdrift.git_utils import Changes
-from docdrift.state import State
-from docdrift.vault import LocalVault
+from docdrift.core.analysis import analyze_changes
+from docdrift.core.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
+from docdrift.core.git_utils import Changes
+from docdrift.local import adr
+from docdrift.local.state import State
+from docdrift.local.vault import LocalVault
 
 
 def _changeset(old=None, new=None):

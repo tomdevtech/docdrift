@@ -1,12 +1,12 @@
-"""Tests for docdrift.vault (local file access and mocked REST API)."""
+"""Tests for docdrift.local.vault (local file access and mocked REST API)."""
 
 from pathlib import Path
 
 import pytest
 import requests
 
-from docdrift import vault as vault_module
-from docdrift.vault import (
+from docdrift.local import vault as vault_module
+from docdrift.local.vault import (
     AUTO_DOC_MARKER,
     LocalVault,
     RestVault,

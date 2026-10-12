@@ -10,7 +10,7 @@
 
 PYTHON="__PYTHON__"   # interpreter docdrift is installed in (written by `docdrift init`)
 if "$PYTHON" -c "import docdrift" > /dev/null 2>&1; then
-    RUN=("$PYTHON" -m docdrift)
+    RUN=("$PYTHON" -m docdrift.cli)
 elif command -v docdrift > /dev/null 2>&1; then
     RUN=(docdrift)
 else

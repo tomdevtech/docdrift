@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from docdrift.llm_client import ChatMessage
+from docdrift.local.llm_client import ChatMessage
 
 
 def git(repo: Path, *args: str) -> str:

@@ -1,13 +1,13 @@
-"""End-to-end tests of docdrift.pipeline with a real Git repo and a fake LLM."""
+"""End-to-end tests of docdrift.local.pipeline with a real Git repo and a fake LLM."""
 
 from pathlib import Path
 
 import pytest
 from conftest import FakeLLM
 
-from docdrift import pipeline, state
-from docdrift.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
-from docdrift.vault import AUTO_DOC_MARKER, LocalVault
+from docdrift.core.config import AdrConfig, DocdriftConfig, GithubDocsConfig, ObsidianConfig
+from docdrift.local import pipeline, state
+from docdrift.local.vault import AUTO_DOC_MARKER, LocalVault
 
 A = '"""Entry."""\nfrom proj import b\n\ndef main():\n    return b.work()\n'
 B = '"""Worker."""\ndef work():\n    return 1\n'
@@ -183,7 +183,7 @@ def test_force_regenerates_current_notes(setup, llm):
     repo, *_ = setup
     sha = repo.commit({"proj/b.py": B})
     run(setup, llm)
-    from docdrift.git_utils import EMPTY_TREE
+    from docdrift.core.git_utils import EMPTY_TREE
     assert run(setup, llm, from_sha=EMPTY_TREE, to_sha=sha).documented == []
     assert run(setup, llm, from_sha=EMPTY_TREE, to_sha=sha, force=True).documented == ["proj/b.py"]
 
@@ -250,7 +250,7 @@ def test_bom_file_is_analysed(setup, llm):
 
 
 def test_unreachable_llm_stops_the_run_early(setup):
-    from docdrift.llm_client import LLMUnavailable
+    from docdrift.local.llm_client import LLMUnavailable
 
     class Down:
         calls = 0
@@ -266,7 +266,7 @@ def test_unreachable_llm_stops_the_run_early(setup):
 
 
 def test_missing_local_vault_is_an_error_not_created(tmp_path):
-    from docdrift.vault import open_vault
+    from docdrift.local.vault import open_vault
 
     cfg = DocdriftConfig(
         repo_name="p", api_base_url="", model="", obsidian=ObsidianConfig("local", tmp_path / "typo"),
