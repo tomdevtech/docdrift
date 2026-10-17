@@ -116,9 +116,12 @@ copes with `max_prompt_chars` (a test prompt, takes a moment) and the hook. Ever
 should start with `[OK  ]`; fix every `[FAIL]` before you go on - the message says what
 is wrong.
 
-**4. First run in the foreground** - it documents the whole repository:
+**4. First run in the foreground** - it documents the whole repository. Preview it
+first: the dry run lists every file that would get a note, without an LLM call - if
+files show up that need no note (generated code, fixtures), add them to `ignore`.
 
 ```bash
+docdrift run --dry-run             # preview, nothing is written
 docdrift run                       # or: docdrift run --mode overview
 ```
 
