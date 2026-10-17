@@ -3,7 +3,7 @@
 docdrift has two flows. The **local flow** (this page, stages 0-3) runs on every
 push with a local LLM and writes to the Obsidian vault. The **merge flow** (last
 section) runs in GitHub Actions after a merge into `main` and has the repository docs
-(README, `docs/`) checked by the Copilot coding agent or GitHub Models - but only when
+(README, `docs/`) checked by the Copilot coding agent or an LLM - but only when
 the change can matter to users. The split is strict: technical docs (notes,
 architecture, ADRs) come only from the local flow, product docs only from the merge
 flow. Both share stage 0.
@@ -101,7 +101,7 @@ contain invented modules or edges.
 
 `mode: overview` skips stage 1 and writes only this note; `mode: per-file` skips stage 3.
 
-## Merge flow (`merge/task.py`, `merge/docs_check.py`, `merge/models.py`)
+## Merge flow (`merge/task.py`, `merge/docs_check.py`, `merge/llm.py`)
 
 Purpose: keep the product docs (`README.md`, `docs_paths`) up to date after every merge
 into `main`. `docdrift copilot-task` runs in GitHub Actions and builds the task without
@@ -136,9 +136,9 @@ an LLM; `github_docs.engine` decides who carries it out.
    technical docs that some repositories keep there are never treated as product docs).
 6. **Engine `copilot`:** the workflow posts the issue with a user token so Copilot can
    be assigned; if that fails (no licence, agent disabled), it is posted unassigned.
-7. **Engine `github-models`:** `docdrift models-docs` builds the same task and asks
-   GitHub Models once per doc file (at most `models_max_files`, files with mentions
-   first, then `README.md`) for find/replace edits. An edit is applied only if its
+7. **Engine `llm`:** `docdrift llm-docs` builds the same task and asks the configured
+   OpenAI-compatible LLM (default: OpenRouter's free models) once per doc file (at most
+   `llm_max_files`, files with mentions first, then `README.md`) for find/replace edits. An edit is applied only if its
    `find` text occurs exactly once, so the model cannot rewrite or truncate a file.
    The workflow commits the result to `docdrift/docs-pr-<n>` and opens a pull request,
    or comments "No documentation update needed" on the merged one
@@ -168,7 +168,7 @@ an error - it never overwrites a note.
 - Notes of deleted files are marked, not removed; renames show up as delete + add.
 - The local flow describes the branch you push; notes of a branch you switch away from
   are updated on that branch's next push.
-- The merge flow cannot verify what Copilot or GitHub Models write; the pull request
+- The merge flow cannot verify what Copilot or the LLM write; the pull request
   review does.
 - Overloads and property setters share a name, so only the last is tracked.
 - Wikilinks between per-file notes depend on the model; the module map does not.

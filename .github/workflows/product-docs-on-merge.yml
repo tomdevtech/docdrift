@@ -5,11 +5,11 @@
 # Python AST, no LLM) and checks whether users could be affected at all. Internal
 # changes stop here. Otherwise the docs are checked and updated by the engine set
 # in .docdrift/config.yaml (github_docs.engine):
-#   copilot        an issue for the GitHub Copilot coding agent (needs a Copilot
-#                  Pro/Pro+/Business/Enterprise licence); Copilot opens the PR.
-#   github-models  GitHub Models (free, rate-limited) edits the docs right here
-#                  and this workflow opens the PR - or comments on the merged PR
-#                  that no update is needed.
+#   copilot  an issue for the GitHub Copilot coding agent (needs a Copilot
+#            Pro/Pro+/Business/Enterprise licence); Copilot opens the PR.
+#   llm      any OpenAI-compatible LLM (default: OpenRouter's free models) edits
+#            the docs right here and this workflow opens the PR - or comments on
+#            the merged PR that no update is needed.
 # Strict separation: only product docs are written. Technical docs (notes,
 # architecture, ADRs) come from the local flow and live in the Obsidian vault.
 # Reviewing the docs pull request is the review of the docs.
@@ -21,13 +21,16 @@
 #        Copilot (fine-grained: Actions, Contents, Issues, Pull requests =
 #        read/write). GitHub does not let GITHUB_TOKEN assign Copilot. Without
 #        the secret, or if the assignment fails, the issue is created unassigned.
-#   github-models:
-#     1. Settings > Actions > General > Workflow permissions: allow GitHub
+#   llm:
+#     1. Secret DOCDRIFT_LLM_API_KEY: the API key of the provider in
+#        github_docs.llm_api_base_url (e.g. an OpenRouter key). Not needed for a
+#        local LM Studio / Ollama on a self-hosted runner.
+#     2. Settings > Actions > General > Workflow permissions: allow GitHub
 #        Actions to create and approve pull requests.
 #   both:
 #     - Repository variable DOCDRIFT_PIP_SPEC: where to install docdrift from,
 #       pinned to a tag or commit, e.g.
-#       "git+https://github.com/<you>/docdrift.git@v1.0.0". Do NOT use plain
+#       "git+https://github.com/<you>/docdrift.git@v1.0.1". Do NOT use plain
 #       "docdrift" - that name on PyPI belongs to a different project. Required,
 #       except in the docdrift repository itself, which installs its own checkout.
 #     - Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).
@@ -44,10 +47,9 @@ on:
     branches: [main]
 
 permissions:
-  contents: write        # github-models: push the docs branch
+  contents: write        # llm: push the docs branch
   issues: write          # copilot: create the issue
-  pull-requests: write   # github-models: open the docs PR or comment on the merged PR
-  models: read           # github-models: GitHub Models inference
+  pull-requests: write   # llm: open the docs PR or comment on the merged PR
 
 jobs:
   docs-task:
@@ -127,27 +129,27 @@ jobs:
             unassigned
           elif ! GH_TOKEN="$COPILOT_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
                 --input "$issue" --jq '"Issue created: " + .html_url'; then
-            echo "::warning::Copilot could not be assigned (no Copilot licence or agent disabled?) - the issue is created without assignee. Consider github_docs.engine: github-models."
+            echo "::warning::Copilot could not be assigned (no Copilot licence or agent disabled?) - the issue is created without assignee. Consider github_docs.engine: llm."
             unassigned
           fi
 
-      # --- engine: github-models ----------------------------------------------------
+      # --- engine: llm --------------------------------------------------------------
 
-      - name: Update the docs with GitHub Models
-        id: models
-        if: steps.task.outputs.engine == 'github-models' && steps.task.outputs.task == 'true'
+      - name: Update the docs with the LLM
+        id: llm
+        if: steps.task.outputs.engine == 'llm' && steps.task.outputs.task == 'true'
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          DOCDRIFT_LLM_API_KEY: ${{ secrets.DOCDRIFT_LLM_API_KEY }}
         run: |
-          docdrift models-docs \
+          docdrift llm-docs \
             --pr "$PR_NUMBER" --base "$BASE_SHA" --head "$HEAD_SHA" \
             --title "$PR_TITLE" --head-ref "$HEAD_REF" \
             --body-file "$RUNNER_TEMP/pr-body.md" \
             --summary "$RUNNER_TEMP/summary.md"
 
       - name: Open the docs pull request
-        if: steps.models.outputs.changed == 'true'
+        if: steps.llm.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -165,7 +167,7 @@ jobs:
           fi
 
       - name: Report that no update is needed
-        if: steps.models.outputs.changed == 'false' && steps.models.outputs.summary == 'true'
+        if: steps.llm.outputs.changed == 'false' && steps.llm.outputs.summary == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

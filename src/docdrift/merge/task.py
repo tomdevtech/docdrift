@@ -14,8 +14,8 @@ installed by ``docdrift init-github-product``). No LLM runs on the runner:
    changes no file and says so in its pull request, which you then close.
 
 The task is executed by the configured ``github_docs.engine``: the Copilot
-coding agent (this issue) or GitHub Models (:mod:`docdrift.merge.models`, which
-uses the same task and opens the pull request itself).
+coding agent (this issue) or an OpenAI-compatible LLM (:mod:`docdrift.merge.llm`,
+which uses the same task; the workflow opens the pull request itself).
 
 Strict separation: Copilot writes **product docs only** - what users of the
 project read. Everything technical (per-file notes, architecture, ADRs) is the
@@ -41,7 +41,7 @@ from docdrift.merge.docs_check import TECHNICAL_DOC_DIRS, DocsCheck, check_docs,
 COPILOT_LOGIN = "copilot-swe-agent[bot]"
 #: Branch prefix of pull requests opened by the Copilot coding agent.
 COPILOT_BRANCH_PREFIX = "copilot/"
-#: Branch prefix of the docs pull requests opened by the ``github-models`` engine.
+#: Branch prefix of the docs pull requests opened by the ``llm`` engine.
 DOCS_BRANCH_PREFIX = "docdrift/"
 #: Hidden marker in every generated issue (lets people and scripts find them).
 MARKER = "<!-- docdrift:merge-task -->"
@@ -70,7 +70,7 @@ class CopilotTask:
     body: str
     assignees: list[str] = field(default_factory=list)
     docs_check: DocsCheck = field(default_factory=DocsCheck)
-    #: AST changes of the merge (used by the ``github-models`` engine).
+    #: AST changes of the merge (used by the ``llm`` engine).
     structure: str = ""
 
     def to_issue(self) -> dict:

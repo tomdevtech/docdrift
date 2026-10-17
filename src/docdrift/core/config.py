@@ -21,7 +21,7 @@ _ENV_VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 MODES = ("both", "overview", "per-file")
 
 #: Who updates the product docs in the merge flow (see :class:`GithubDocsConfig`).
-ENGINES = ("copilot", "github-models")
+ENGINES = ("copilot", "llm")
 
 
 @dataclass
@@ -50,11 +50,12 @@ class GithubDocsConfig:
     ``enabled``: product-docs task on/off. ``precheck``: skip merges that cannot
     affect users (``false`` asks after every merge). ``engine``: who updates the
     docs - ``copilot`` (an issue for the Copilot coding agent, needs a Copilot
-    licence) or ``github-models`` (GitHub Models in the workflow, free with
-    rate limits, opens a pull request itself; see :mod:`docdrift.merge.models`).
-    ``assignee``: for ``copilot``, the agent (``copilot``) or any GitHub login.
-    ``models_*``: for ``github-models``, the model, how many doc files are
-    updated per merge, and the prompt budget per file in characters.
+    licence) or ``llm`` (any OpenAI-compatible LLM called by the workflow, e.g.
+    OpenRouter's free models; opens a pull request itself; see
+    :mod:`docdrift.merge.llm`). ``assignee``: for ``copilot``, the agent
+    (``copilot``) or any GitHub login. ``llm_*``: for ``llm``, the API root, the
+    model, how many doc files are updated per merge, and the prompt budget per
+    file in characters. The API key comes from the secret ``DOCDRIFT_LLM_API_KEY``.
     """
 
     enabled: bool = True
@@ -62,9 +63,10 @@ class GithubDocsConfig:
     assignee: str = "copilot"
     docs_paths: list[str] = field(default_factory=lambda: ["docs/", "README.md"])
     engine: str = "copilot"
-    models_model: str = "openai/gpt-4.1-mini"
-    models_max_files: int = 3
-    models_max_chars: int = 24000
+    llm_api_base_url: str = "https://openrouter.ai/api/v1"
+    llm_model: str = "openrouter/free"
+    llm_max_files: int = 3
+    llm_max_chars: int = 24000
 
 
 @dataclass
@@ -161,6 +163,11 @@ def load_config(project_root: Path) -> DocdriftConfig:
 
     github_raw = raw.get("github_docs", {}) or {}
     engine = str(github_raw.get("engine") or "copilot").strip().lower()
+    if engine == "github-models":
+        raise ValueError(
+            "github_docs.engine 'github-models' is gone: GitHub Models was retired on "
+            "2026-07-30. Use engine: llm (e.g. OpenRouter's free models)."
+        )
     if engine not in ENGINES:
         raise ValueError(f"Unknown github_docs.engine {engine!r} ({', '.join(ENGINES)})")
     github_docs = GithubDocsConfig(
@@ -169,9 +176,10 @@ def load_config(project_root: Path) -> DocdriftConfig:
         assignee=github_raw.get("assignee", "copilot"),
         docs_paths=github_raw.get("docs_paths", ["docs/", "README.md"]),
         engine=engine,
-        models_model=str(github_raw.get("models_model") or "openai/gpt-4.1-mini"),
-        models_max_files=int(github_raw.get("models_max_files", 3)),
-        models_max_chars=int(github_raw.get("models_max_chars", 24000)),
+        llm_api_base_url=str(github_raw.get("llm_api_base_url") or "https://openrouter.ai/api/v1"),
+        llm_model=str(github_raw.get("llm_model") or "openrouter/free"),
+        llm_max_files=int(github_raw.get("llm_max_files", 3)),
+        llm_max_chars=int(github_raw.get("llm_max_chars", 24000)),
     )
 
     adr_raw = raw.get("adr", {}) or {}

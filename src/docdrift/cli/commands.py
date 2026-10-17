@@ -9,7 +9,7 @@ Commands:
     docdrift run                    document everything since the last run
     docdrift adr                    draft an ADR for a commit range
     docdrift copilot-task           (CI) build the docs task (Copilot issue) for a merged pull request
-    docdrift models-docs            (CI) update the docs of a merged pull request with GitHub Models
+    docdrift llm-docs               (CI) update the docs of a merged pull request with an LLM
 
 All logic lives in the feature packages - :mod:`docdrift.local`,
 :mod:`docdrift.merge` and :mod:`docdrift.setup`; this module only parses
@@ -31,7 +31,7 @@ from docdrift.core import git_utils
 from docdrift.local import pipeline
 from docdrift.local.state import RunLocked, load_state
 from docdrift.local.vault import architecture_note_path, vault_root
-from docdrift.merge import models as merge_models
+from docdrift.merge import llm as merge_llm
 from docdrift.merge import task as merge
 from docdrift.setup import doctor, install
 
@@ -93,8 +93,9 @@ def init_github_product() -> None:
         "    2. Add a repository secret DOCDRIFT_COPILOT_TOKEN: a personal access token\n"
         "       (fine-grained: Actions, Contents, Issues, Pull requests = read/write). GitHub only lets\n"
         "       user tokens assign Copilot; without it the issue is created unassigned.\n"
-        "  github-models (free, rate-limited):\n"
-        "    1. Settings > Actions > General: allow GitHub Actions to create pull requests.\n"
+        "  llm (any OpenAI-compatible LLM, e.g. OpenRouter's free models):\n"
+        "    1. Add a repository secret DOCDRIFT_LLM_API_KEY (e.g. an OpenRouter key).\n"
+        "    2. Settings > Actions > General: allow GitHub Actions to create pull requests.\n"
         "  Then commit .docdrift/config.yaml - the workflow reads it."
     )
     try:
@@ -256,17 +257,17 @@ def copilot_task(
     click.echo(f"Docs task written to {output}: {result.task.title}")
 
 
-@main.command("models-docs")
+@main.command("llm-docs")
 @_pr_options
 @click.option(
     "--summary", type=click.Path(dir_okay=False, path_type=Path), required=True,
     help="Where to write the Markdown summary (pull request body or comment).",
 )
-def models_docs(
+def llm_docs(
     pr_number: int, base_sha: str, head_sha: str, title: str, head_ref: str,
     body_file: Path | None, summary: Path,
 ) -> None:
-    """(CI) Update the product docs of a merged PR with GitHub Models (needs GITHUB_TOKEN)."""
+    """(CI) Update the product docs of a merged PR with an LLM (key: DOCDRIFT_LLM_API_KEY)."""
     repo_root, cfg, pr, result = _merge_task(pr_number, base_sha, head_sha, title, head_ref, body_file)
     if summary.exists():
         summary.unlink()
@@ -274,15 +275,18 @@ def models_docs(
         click.echo(f"Nothing to do: {result.reason}.")
         _github_output(changed="false", summary="false")
         return
-    token = os.environ.get("GITHUB_TOKEN", "")
-    if not token:
-        raise click.ClickException("GITHUB_TOKEN is not set (the workflow needs `permissions: models: read`).")
-    client = merge_models.ModelsClient(token, cfg.github_docs.models_model)
+    gd = cfg.github_docs
+    key = os.environ.get("DOCDRIFT_LLM_API_KEY", "")
+    if not key and not gd.llm_api_base_url.startswith(("http://localhost", "http://127.0.0.1")):
+        raise click.ClickException(
+            f"DOCDRIFT_LLM_API_KEY is not set - add it as a repository secret ({gd.llm_api_base_url} needs a key)."
+        )
+    client = merge_llm.LLMClient(gd.llm_api_base_url, gd.llm_model, api_key=key)
     try:
-        outcome = merge_models.update_docs(repo_root, cfg, result.task, pr, client=client, log=click.echo)
-    except merge_models.ModelsError as exc:
+        outcome = merge_llm.update_docs(repo_root, cfg, result.task, pr, client=client, log=click.echo)
+    except merge_llm.LLMError as exc:
         raise click.ClickException(str(exc)) from exc
-    summary.write_text(outcome.summary(pr, cfg.github_docs.models_model), encoding="utf-8")
+    summary.write_text(outcome.summary(pr, gd.llm_model), encoding="utf-8")
     _github_output(changed=str(outcome.changed).lower(), summary="true")
     click.echo("Docs updated - a pull request follows." if outcome.changed else "No documentation update needed.")
 
