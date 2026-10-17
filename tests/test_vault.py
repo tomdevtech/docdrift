@@ -101,3 +101,16 @@ def test_rest_paths_are_url_encoded_and_tls_setting_is_passed(monkeypatch):
 def test_notes_are_written_with_lf(tmp_path):
     LocalVault(tmp_path).write_note("a.md", {"p": 1}, "line1\nline2")
     assert b"\r\n" not in (tmp_path / "a.md").read_bytes()
+
+
+def test_vault_path_pointing_at_projects_uses_its_parent(tmp_path):
+    from docdrift.core.config import DocdriftConfig, GithubDocsConfig, ObsidianConfig
+
+    (tmp_path / "Projects").mkdir()
+    cfg = DocdriftConfig(
+        repo_name="p", api_base_url="", model="", github_docs=GithubDocsConfig(),
+        obsidian=ObsidianConfig("local", vault_path=tmp_path / "Projects"),
+    )
+    v = vault_module.open_vault(cfg)
+    assert v.root == tmp_path
+    assert vault_module.vault_root(tmp_path / "Vault") == tmp_path / "Vault"

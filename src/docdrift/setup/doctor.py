@@ -1,8 +1,7 @@
 """``docdrift check``: verify the setup before relying on it.
 
 Every check returns a :class:`Finding`; nothing is changed. Typical problems it
-catches: the vault path points at ``Projects`` (notes would land in
-``Projects/Projects/<repo>``), the LLM server is down or the configured model is
+catches: the vault path does not exist or is not the vault root, the LLM server is down or the configured model is
 not loaded, the model's context is too small for ``max_prompt_chars``, or the
 pre-push hook is missing, outdated or saved with Windows line endings.
 """
@@ -16,6 +15,7 @@ import requests
 
 from docdrift.core.config import DocdriftConfig, load_config
 from docdrift.local.llm_client import ChatMessage, LLMClient
+from docdrift.local.vault import vault_root
 
 
 @dataclass
@@ -54,15 +54,14 @@ def _vault(cfg: DocdriftConfig) -> list[Finding]:
     if not obs.vault_path:
         return [Finding("error", "vault", "obsidian.vault_path is missing")]
     out = []
-    root = obs.vault_path
-    if not root.is_dir():
-        out.append(Finding("error", "vault", f"{root} does not exist"))
+    if not obs.vault_path.is_dir():
+        out.append(Finding("error", "vault", f"{obs.vault_path} does not exist"))
         return out
-    if root.name.lower() == "projects":
+    root = vault_root(obs.vault_path)
+    if root != obs.vault_path:
         out.append(Finding(
-            "warn", "vault",
-            f"{root} ends in 'Projects' - notes would go to {root / 'Projects' / cfg.repo_name}. "
-            "Point vault_path at the vault root.",
+            "ok", "vault",
+            f"{obs.vault_path} ends in 'Projects' - using {root} as the vault root.",
         ))
     if not (root / ".obsidian").is_dir():
         out.append(Finding("warn", "vault", f"{root} has no .obsidian folder - is it the vault root?"))

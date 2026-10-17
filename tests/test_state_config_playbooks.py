@@ -82,3 +82,27 @@ def test_language_is_read_from_config(tmp_path):
     (tmp_path / ".docdrift").mkdir()
     (tmp_path / ".docdrift" / "config.yaml").write_text('language: "German"\n', encoding="utf-8")
     assert load_config(tmp_path).language == "German"
+
+
+def _config(tmp_path, extra):
+    (tmp_path / ".docdrift").mkdir(parents=True)
+    (tmp_path / ".docdrift" / "config.yaml").write_text(
+        f'repo_name: "x"\nobsidian:\n  access_mode: "local"\n{extra}', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_mode_defaults_to_both_and_legacy_switch_means_per_file(tmp_path):
+    cfg = load_config(_config(tmp_path / "a", ""))
+    assert cfg.mode == "both" and cfg.per_file_notes and cfg.architecture_note
+    cfg = load_config(_config(tmp_path / "b", "architecture_note: false\n"))
+    assert cfg.mode == "per-file" and not cfg.architecture_note
+    cfg = load_config(_config(tmp_path / "c", 'mode: "Overview"\n'))
+    assert cfg.architecture_note and not cfg.per_file_notes
+
+
+def test_unknown_mode_is_rejected(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown mode"):
+        load_config(_config(tmp_path, 'mode: "all"\n'))

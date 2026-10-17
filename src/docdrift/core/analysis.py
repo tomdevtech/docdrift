@@ -532,17 +532,19 @@ class ProjectModel:
         ]
         return _sha(json.dumps(data))
 
-    def render_outline(self, max_chars: int = 20000) -> str:
+    def render_outline(self, max_chars: int = 20000, paths: list[str] | None = None) -> str:
         """Compact overview for the LLM: per module its docstring, imports, public API.
 
-        If the result exceeds ``max_chars``, docstring summaries are dropped
-        first, then the text is cut.
+        ``paths`` restricts the outline to these modules (imports still show
+        modules outside the selection). If the result exceeds ``max_chars``,
+        docstring summaries are dropped first, then the text is cut.
         """
         deps = self.dependencies()
+        selected = sorted(self.modules if paths is None else set(paths) & set(self.modules))
 
         def build(with_docs: bool) -> str:
             blocks = []
-            for path in sorted(self.modules):
+            for path in selected:
                 info = self.modules[path]
                 lines = [f"## {path}"]
                 if with_docs and info.doc:

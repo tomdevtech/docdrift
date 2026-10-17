@@ -1,8 +1,8 @@
 """Select and load playbooks (system prompts).
 
-Per-file documentation uses ``base.md`` plus a language playbook. The two
-project-wide stages use a standalone playbook each (``architecture.md`` and
-``adr.md``).
+Per-file documentation uses ``base.md`` plus a language playbook. The
+project-wide stages use standalone playbooks (``package.md`` and
+``architecture.md`` for the overview, ``adr.md``).
 
 Lookup order for every playbook (first match wins):
 
@@ -23,7 +23,7 @@ EXTENSION_MAP = {
 }
 
 # Playbooks that are used on their own, without ``base.md`` prepended.
-STANDALONE = {"architecture", "adr"}
+STANDALONE = {"architecture", "package", "adr"}
 
 
 def resolve_playbook_name(file_path: Path) -> str:
@@ -48,8 +48,8 @@ def load_playbook(
 ) -> str:
     """Return the system prompt for ``name``.
 
-    Language playbooks are prefixed with ``base.md``; ``architecture`` and
-    ``adr`` are returned as they are. For a ``language`` other than English an
+    Language playbooks are prefixed with ``base.md``; the standalone playbooks
+    (``architecture``, ``package``, ``adr``) are returned as they are. For a ``language`` other than English an
     instruction is appended (section names stay English so notes stay uniform).
     """
     if name in STANDALONE or name == "base":

@@ -59,6 +59,8 @@ class FakeLLM:
             raise RuntimeError("LLM down")
         if user.startswith("# Task: architecture"):
             return "## Overview\nA small tool.\n\n## Components\n- [[a]] - does things"
+        if user.startswith("# Task: package"):
+            return "Does the work.\n\n## How it works\n1. `work` returns 1."
         if user.startswith("# Task: ADR"):
             return (
                 "Title: Split the tool into modules\n\n## Context\nIt grew.\n\n"

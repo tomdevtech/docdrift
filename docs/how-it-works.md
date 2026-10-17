@@ -81,11 +81,24 @@ the repository - ADRs are technical docs and stay in the vault.
 
 ### Stage 3 - architecture overview
 
-`_Architecture.md` is regenerated only if the project fingerprint changed (or no note
-exists yet), and pushes that touched no Python file skip even the fingerprint check.
-The model writes overview, components and data flow from the module outline; the
-**module map is drawn from the import graph without the model**, so it cannot contain
-invented edges.
+`_Architecture.md` is the high-level architecture (HLA) note. It is regenerated only if
+the fingerprint - public structure plus product docs (README, `docs_paths`) - changed
+(or no note exists yet); pushes that touched neither a Python file nor a product doc
+skip even the fingerprint check. The model writes the note from the source code, the
+product docs and the folder layout in two steps, because a small model writes only
+about a page per call:
+
+1. one call per package (folder with a public API) with the package's full source
+   code - or its outline if the source does not fit `max_prompt_chars` - for
+   responsibility, how it works, key functions and notable details;
+2. one call for overview, architecture, processes, features and scope from these
+   package summaries, the product docs and the folder layout.
+
+The **module list per package and the module map are drawn without the model** (from
+docstrings, public names and the import graph), so they are complete and cannot
+contain invented modules or edges.
+
+`mode: overview` skips stage 1 and writes only this note; `mode: per-file` skips stage 3.
 
 ## Merge flow (`merge/task.py`, `merge/docs_check.py`)
 

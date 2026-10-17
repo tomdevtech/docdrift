@@ -275,3 +275,74 @@ def test_missing_local_vault_is_an_error_not_created(tmp_path):
     with pytest.raises(ValueError, match="does not exist"):
         open_vault(cfg)
     assert not (tmp_path / "typo").exists()
+
+
+def test_overview_mode_writes_only_the_hla_note_with_docs_and_layout(setup, llm):
+    repo, vault, cfg = setup
+    cfg.mode = "overview"
+    repo.commit({"proj/a.py": A, "proj/b.py": B, "README.md": "# Proj\n\nFeature: counts things.\n"})
+    result = run(setup, llm)
+    assert result.ok and result.documented == [] and result.architecture_updated
+    package, overview = llm.prompts  # one call per package, then the project overview
+    assert package.startswith("# Task: package") and "def work():" in package  # full source
+    assert "Feature: counts things." in overview and "- proj/: 2 file(s)" in overview
+    assert "Does the work." in overview  # the package summary feeds the overview
+    assert not (vault.root / "Projects/proj/proj/a.md").exists()
+    _, arch = vault.read_note("Projects/proj/_Architecture.md")
+    assert "## Overview" in arch and "```mermaid" in arch
+    assert "### `proj/`" in arch and "**How it works**" in arch  # heading demoted
+    assert "- `b.py` - Worker.\n  `work`" in arch  # deterministic module list
+
+
+def test_product_doc_change_regenerates_the_overview(setup, llm):
+    repo, _, cfg = setup
+    cfg.mode = "overview"
+    repo.commit({"proj/a.py": A, "README.md": "# Proj\n"})
+    run(setup, llm)
+    repo.commit({"README.md": "# Proj\n\nNew feature.\n"})
+    assert run(setup, llm).architecture_updated
+
+
+def test_per_file_mode_skips_the_overview(setup, llm):
+    repo, vault, cfg = setup
+    cfg.mode = "per-file"
+    repo.commit({"proj/a.py": A})
+    result = run(setup, llm)
+    assert result.documented == ["proj/a.py"] and not result.architecture_updated
+    assert not (vault.root / "Projects/proj/_Architecture.md").exists()
+
+
+def test_large_package_falls_back_to_its_outline(setup, llm):
+    repo, _, cfg = setup
+    cfg.mode = "overview"
+    big = "def f():\n" + "".join(f"    x{i} = {i}\n" for i in range(3000)) + "    return 1\n"
+    repo.commit({"proj/big.py": big})
+    cfg.max_prompt_chars = 4000
+    run(setup, llm)
+    package = next(p for p in llm.prompts if p.startswith("# Task: package"))
+    assert "outline only" in package and "x2999" not in package and "def f()" in package
+
+
+def test_mode_override_skipping_a_configured_stage_keeps_the_range_open(setup, llm):
+    repo, vault, _ = setup
+    repo.commit({"proj/a.py": A})
+    result = run(setup, llm, mode="overview")
+    assert result.documented == [] and result.architecture_updated
+    assert state.load_state(Path(repo.root) / ".docdrift" / "state", "proj").last_sha is None
+    result = run(setup, llm)  # config mode "both": the per-file notes follow
+    assert result.documented == ["proj/a.py"] and not result.architecture_updated
+
+
+def test_force_regenerates_the_overview_when_nothing_is_new(setup, llm):
+    repo, *_ = setup
+    repo.commit({"proj/a.py": A})
+    run(setup, llm)
+    calls = len(llm.prompts)
+    result = run(setup, llm, mode="overview", force=True)
+    assert result.architecture_updated and len(llm.prompts) == calls + 2
+    assert llm.prompts[-1].startswith("# Task: architecture")
+
+
+def test_unknown_mode_override_is_rejected(setup, llm):
+    with pytest.raises(ValueError, match="Unknown mode"):
+        run(setup, llm, mode="all")

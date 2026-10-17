@@ -34,11 +34,11 @@ language: "English"               # language of the notes in the vault, e.g. "Ge
 
 obsidian:
   access_mode: "local"
-  vault_path: "~/ObsidianVault"   # the vault ROOT; notes go to <vault>/Projects/<repo>/
+  vault_path: "~/ObsidianVault"   # the vault root (or its Projects folder); notes go to <vault>/Projects/<repo>/
   rest_api_base_url: ""
   rest_api_key: "${{OBSIDIAN_REST_API_KEY}}"
 
-architecture_note: true           # maintain Projects/<repo>/_Architecture.md
+mode: "both"                      # both | overview (only the HLA note _Architecture.md) | per-file
 
 adr:
   enabled: true

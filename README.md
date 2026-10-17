@@ -24,11 +24,14 @@ independent; use either or both.
 
 ## What the local flow produces
 
-For every push, docdrift writes into `<vault>/Projects/<repo>/`:
+For every push, docdrift writes into `<vault>/Projects/<repo>/` (`mode: both`; with
+`overview` only the first, with `per-file` only the second):
 
-- **`_Architecture.md`** - the high-level architecture: overview, components,
-  data flow and a module map (Mermaid). Describes the *project*, not single files.
-  Regenerated only when the public structure changes.
+- **`_Architecture.md`** - the high-level architecture (HLA): overview, architecture,
+  processes, features, scope, one section per package (how it works, key functions,
+  module list) and a module map (Mermaid). Describes the *project*, not single files,
+  using the source code plus README and docs.
+  Regenerated only when the public structure or the product docs change.
 - **one note per changed file** - purpose, public interface, how it works, changelog.
   Each note records the commit and a hash of the content it describes, so unchanged
   files are never sent to the model twice. Notes of deleted files are kept and marked.
@@ -106,7 +109,9 @@ docdrift adr --from <sha>      # ADR draft in the vault for a commit range, igno
 The hook never blocks or slows down a push: docdrift runs in the background and logs
 to `.docdrift/logs/docdrift.log`. `DOCDRIFT_SYNC=1 git push` runs it in the foreground,
 `DOCDRIFT_SKIP=1 git push` skips it. Failed files are retried on the next run; a lock
-prevents two runs at once. `docdrift run --force` regenerates all notes of a range.
+prevents two runs at once. `docdrift run --force` regenerates all notes of a range;
+`docdrift run --mode overview` (or `per-file`, `both`) overrides `mode` for one run, e.g.
+`docdrift run --mode overview --force` rebuilds only the HLA note.
 
 ## Use from Python
 
@@ -133,9 +138,9 @@ All keys are optional except `obsidian`. Full example: [examples/docdrift.config
 | `max_prompt_chars` | `12000` | prompt budget; large files are reduced to a signature outline |
 | `language` | `English` | language of the vault notes, e.g. `German` (headings stay English) |
 | `obsidian.access_mode` | `local` | `local` (files) or `rest_api` (plugin + tunnel) |
-| `obsidian.vault_path` | - | vault **root** (notes go to `Projects/<repo>/`); must exist |
+| `obsidian.vault_path` | - | vault root or its `Projects` folder (notes go to `Projects/<repo>/`); must exist |
 | `obsidian.rest_api_verify` | `true` | TLS check for `rest_api`: `false` or the plugin's certificate path |
-| `architecture_note` | `true` | maintain `_Architecture.md` |
+| `mode` | `both` | `both`, `overview` (only the HLA note `_Architecture.md`) or `per-file` |
 | `adr.enabled` / `adr.threshold` | `true` / `4` | ADRs in the vault (local flow only) |
 | `github_docs.enabled` / `precheck` | `true` / `true` | merge flow: product docs task; skip changes users cannot notice |
 | `github_docs.assignee`, `docs_paths` | `copilot`, `docs/` + `README.md` | who gets the issue; which files are product docs |
@@ -166,7 +171,7 @@ src/docdrift/
     doctor.py                    `docdrift check`
   cli/                           `docdrift <command>` - thin layer, no logic
     commands.py  __main__.py
-docs/                            usage, how-it-works, setup guides, adr/
+docs/                            usage, how-it-works, runtime, setup guides, adr/
 ```
 
 Every module belongs to a feature. `core` is shared; `local` and `merge` never

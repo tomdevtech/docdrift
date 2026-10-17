@@ -17,6 +17,9 @@ CONFIG_RELATIVE_PATH = Path(".docdrift") / "config.yaml"
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
+#: What the local flow writes: ``per-file`` notes, the ``overview`` (HLA) note, or ``both``.
+MODES = ("both", "overview", "per-file")
+
 
 @dataclass
 class ObsidianConfig:
@@ -77,10 +80,32 @@ class DocdriftConfig:
     playbook_dir: Path | None = None
     ignore: list[str] = field(default_factory=list)
     max_prompt_chars: int = 12000
-    architecture_note: bool = True
+    #: ``both`` (default), ``overview`` (only ``_Architecture.md``) or ``per-file``.
+    mode: str = "both"
     #: Language of the notes in the vault (local flow), e.g. "German".
     language: str = "English"
     adr: AdrConfig = field(default_factory=AdrConfig)
+
+    @property
+    def per_file_notes(self) -> bool:
+        """Write one note per changed file (stage 1)."""
+        return self.mode in ("both", "per-file")
+
+    @property
+    def architecture_note(self) -> bool:
+        """Maintain the overview note ``_Architecture.md`` (stage 3)."""
+        return self.mode in ("both", "overview")
+
+
+def _mode(raw: dict) -> str:
+    """``mode`` from the config; the legacy ``architecture_note: false`` means ``per-file``."""
+    mode = raw.get("mode")
+    if mode is None:
+        return "both" if raw.get("architecture_note", True) else "per-file"
+    mode = str(mode).strip().lower()
+    if mode not in MODES:
+        raise ValueError(f"Unknown mode {mode!r} in the config ({', '.join(MODES)})")
+    return mode
 
 
 def _resolve_env_placeholders(value: str | None) -> str | None:
@@ -148,7 +173,7 @@ def load_config(project_root: Path) -> DocdriftConfig:
         playbook_dir=(project_root / playbook_dir_raw) if playbook_dir_raw else None,
         ignore=raw.get("ignore", []),
         max_prompt_chars=int(raw.get("max_prompt_chars", 12000)),
-        architecture_note=raw.get("architecture_note", True),
+        mode=_mode(raw),
         language=str(raw.get("language") or "English"),
         adr=adr,
     )

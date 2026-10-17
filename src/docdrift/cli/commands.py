@@ -115,12 +115,17 @@ def check(no_probe: bool) -> None:
 @main.command()
 @click.option("--from", "from_sha", default=None, help="Start commit (default: last documented).")
 @click.option("--to", "to_sha", default=None, help="End commit (default: HEAD).")
-@click.option("--force", is_flag=True, help="Regenerate notes even if they are already current.")
-def run(from_sha: str | None, to_sha: str | None, force: bool) -> None:
+@click.option("--force", is_flag=True, help="Regenerate notes and overview even if they are already current.")
+@click.option(
+    "--mode", type=click.Choice(config_module.MODES, case_sensitive=False), default=None,
+    help="Override `mode` from the config for this run: per-file notes, the overview (HLA) or both.",
+)
+def run(from_sha: str | None, to_sha: str | None, force: bool, mode: str | None) -> None:
     """Update the technical documentation (per-file notes, ADR drafts, architecture overview)."""
     try:
         result = pipeline.run_documentation(
-            _find_repo_root(), from_sha=from_sha, to_sha=to_sha, log=click.echo, force=force
+            _find_repo_root(), from_sha=from_sha, to_sha=to_sha, log=click.echo, force=force,
+            mode=mode.lower() if mode else None,
         )
     except (RunLocked, FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

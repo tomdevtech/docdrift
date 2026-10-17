@@ -2,7 +2,10 @@
 repo_name: "docdrift"
 
 api_base_url: "http://127.0.0.1:1234/v1"
-model: "qwen2.5-coder-7b-instruct"
+model: "qwen3.5-4b-super-coder"
+
+max_prompt_chars: 92000           # LM Studio context: 92k tokens
+mode: "both"                          # both | overview (only the HLA note _Architecture.md) | per-file
 
 obsidian:
   access_mode: "local"
@@ -20,5 +23,7 @@ github_docs:
 
 ignore:
   - "tests/"
+  - "docs/"
+  - "*.md"
   - "*.lock"
   - ".docdrift/*"

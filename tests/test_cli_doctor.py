@@ -1,5 +1,7 @@
 """Tests for the pre-push hook installation and `docdrift check`."""
 
+import os
+import shutil
 import subprocess
 import time
 
@@ -8,6 +10,16 @@ from click.testing import CliRunner
 
 from docdrift.cli import commands as cli
 from docdrift.setup import doctor
+
+
+def _bash() -> str:
+    """Git for Windows' bash; plain `bash` on Windows may be the WSL launcher, which fails without a distro."""
+    git = shutil.which("git")
+    if os.name == "nt" and git:
+        candidate = os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("bash") or "bash"
 
 
 @pytest.fixture
@@ -29,19 +41,19 @@ def test_init_writes_an_lf_hook_with_the_interpreter_path(initialised):
 
 def test_hook_skip_and_missing_python_never_block_the_push(initialised):
     hook = initialised.root / ".git" / "hooks" / "pre-push"
-    run = subprocess.run(["bash", str(hook)], env={"DOCDRIFT_SKIP": "1", "PATH": "/usr/bin:/bin"},
+    run = subprocess.run([_bash(), str(hook)], env={"DOCDRIFT_SKIP": "1", "PATH": "/usr/bin:/bin"},
                          capture_output=True, text=True, cwd=initialised.root, check=False)
     assert run.returncode == 0 and run.stdout == ""
     broken = hook.read_text(encoding="utf-8").replace('PYTHON="', 'PYTHON="/nonexistent/python', 1)
     hook.write_text(broken, encoding="utf-8", newline="\n")
-    run = subprocess.run(["bash", str(hook)], env={"PATH": "/usr/bin:/bin"},
+    run = subprocess.run([_bash(), str(hook)], env={"PATH": "/usr/bin:/bin"},
                          capture_output=True, text=True, cwd=initialised.root, check=False)
     assert run.returncode == 0 and "not installed" in run.stdout
 
 
 def test_hook_runs_in_the_background_and_logs(initialised):
     hook = initialised.root / ".git" / "hooks" / "pre-push"
-    run = subprocess.run(["bash", str(hook)], capture_output=True, text=True, cwd=initialised.root, timeout=30, check=False)
+    run = subprocess.run([_bash(), str(hook)], capture_output=True, text=True, cwd=initialised.root, timeout=30, check=False)
     assert run.returncode == 0 and "background" in run.stdout
     log = initialised.root / ".docdrift" / "logs" / "docdrift.log"
     for _ in range(100):

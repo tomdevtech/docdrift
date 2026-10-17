@@ -29,9 +29,17 @@ Do the first run in the foreground: it sends every file to the model, which can 
 a while on a large repository (progress is shown as `[n/total]`). If it is interrupted
 or some files fail, just run it again - notes that are already current are skipped.
 
-Set `obsidian.vault_path` to the vault **root**. Notes are created below
-`Projects/<repo>/`; do not point it at the `Projects` folder itself or you get
-`Projects/Projects/<repo>`.
+Set `obsidian.vault_path` to the vault root. Notes are created below
+`Projects/<repo>/`; if the path already ends in `Projects`, its parent is used as the
+vault root, so you never get `Projects/Projects/<repo>`.
+
+`mode` selects what is written: `both` (default) writes one note per file and the
+HLA note `_Architecture.md`, `overview` only the HLA note (one LLM call per package
+plus one - minutes instead of half an hour), `per-file` only the notes per file. `docdrift run --mode
+<mode>` overrides it for one run; if that skips a stage the config enables, the range
+stays open so the next regular run still does it. `docdrift run --mode overview --force`
+rebuilds the HLA note even when nothing new was committed.
+How long each mode takes: [runtime.md](runtime.md).
 
 Re-run `docdrift init` after upgrading or after moving the virtualenv: the hook calls
 the Python interpreter docdrift is installed in, so it also works from IDEs and Git GUIs
@@ -59,10 +67,11 @@ without an activated venv (an existing foreign hook is saved as `pre-push.bak`).
 
 ```
 Projects/<repo>/
-  _Architecture.md        overview, components, data flow, module map
+  _Architecture.md        HLA: overview, architecture, processes, features, scope,
+                          one section per package, module map (modes both / overview)
   ADR/Index.md            list of all ADRs
   ADR/0001-....md         ADR drafts (status: proposed)
-  <path/to/file>.md       one note per documented file
+  <path/to/file>.md       one note per documented file (modes both / per-file)
 ```
 
 Write your own remarks **below** `<!-- AUTO-DOC-END -->`; they are kept.

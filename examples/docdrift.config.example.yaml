@@ -22,13 +22,17 @@ obsidian:
   # "local"    -> direct file access (hook or self-hosted runner on the vault machine)
   # "rest_api" -> "Local REST API" plugin + tunnel (Obsidian must be open)
   access_mode: "local"
-  vault_path: "~/ObsidianVault"            # vault ROOT (must exist); notes go to <vault>/Projects/<repo>/
+  vault_path: "~/ObsidianVault"            # vault root or its Projects folder (must exist); notes go to <vault>/Projects/<repo>/
   rest_api_base_url: "https://<tailscale-hostname>:27124"
   rest_api_key: "${OBSIDIAN_REST_API_KEY}"  # from an environment variable, never plain text
   rest_api_verify: true                     # false or ".docdrift/obsidian.crt" for the plugin's self-signed certificate
 
-# Project-wide overview note (_Architecture.md): module map, components, data flow.
-architecture_note: true
+# What the local flow writes into Projects/<repo>/:
+#   "both"     -> one note per file + the HLA note _Architecture.md (default)
+#   "overview" -> only _Architecture.md: overview, architecture, processes, features,
+#                 scope, one section per package, module map (one LLM call per package + one)
+#   "per-file" -> only the notes per file
+mode: "both"
 
 # Architecture Decision Records (technical docs): drafted by the local LLM into
 # the vault (Projects/<repo>/ADR/), only for significant changes. Never by Copilot.

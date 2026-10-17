@@ -43,6 +43,16 @@ class Vault(Protocol):
 # --- note paths ---------------------------------------------------------------
 
 
+def vault_root(path: Path) -> Path:
+    """The vault root for a configured ``vault_path``.
+
+    Note paths start with ``Projects/``; a ``vault_path`` that already points at
+    the ``Projects`` folder is taken as its parent, so notes never end up in
+    ``Projects/Projects/<repo>``.
+    """
+    return path.parent if path.name.lower() == "projects" else path
+
+
 def resolve_note_path(repo_name: str, source_file: Path) -> str:
     """Map a repository file to its vault path.
 
@@ -166,7 +176,7 @@ def open_vault(config: DocdriftConfig) -> Vault:
         if not obs.vault_path.is_dir():
             # Never create a vault: a typo would silently scatter notes on the disk.
             raise ValueError(f"obsidian.vault_path {obs.vault_path} does not exist.")
-        return LocalVault(obs.vault_path)
+        return LocalVault(vault_root(obs.vault_path))
     if obs.access_mode == "rest_api":
         if not obs.rest_api_base_url or not obs.rest_api_key:
             raise ValueError(
