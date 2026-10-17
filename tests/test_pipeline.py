@@ -346,3 +346,50 @@ def test_force_regenerates_the_overview_when_nothing_is_new(setup, llm):
 def test_unknown_mode_override_is_rejected(setup, llm):
     with pytest.raises(ValueError, match="Unknown mode"):
         run(setup, llm, mode="all")
+
+
+def plan(setup, **kw):
+    repo, vault, cfg = setup
+    return pipeline.plan_documentation(repo.root, cfg, vault=vault, log=lambda m: None, **kw)
+
+
+def test_dry_run_lists_the_work_without_llm_vault_writes_or_state(setup, llm):
+    repo, vault, _ = setup
+    repo.commit({"proj/a.py": A, "proj/b.py": B, "tests/t.py": "x=1\n"})
+    p = plan(setup)
+    assert sorted(p.document) == ["proj/a.py", "proj/b.py"] and not p.up_to_date
+    assert p.overview == "would be regenerated" and p.adr == "never on the first run"
+    assert not llm.prompts and not (vault.root / "Projects").exists()
+    assert state.load_state(Path(repo.root) / ".docdrift" / "state", "proj").last_sha is None
+
+
+def test_dry_run_agrees_with_the_real_run(setup, llm):
+    repo, *_ = setup
+    repo.commit({"proj/a.py": A, "proj/b.py": B})
+    run(setup, llm)
+    repo.commit({"proj/b.py": B.replace("return 1", "return 1  # c"), "proj/a.py": A.replace("b.work()", "b.work() + 1")})
+    p = plan(setup)
+    assert p.document == ["proj/a.py"] and p.skip == [("proj/b.py", "formatting/comments only")]
+    assert p.overview.startswith("current")  # only a body changed
+    result = run(setup, llm)
+    assert result.documented == p.document and not result.architecture_updated
+    assert plan(setup).up_to_date
+
+
+def test_dry_run_detects_current_notes_and_force(setup, llm):
+    repo, *_ = setup
+    sha = repo.commit({"proj/b.py": B})
+    run(setup, llm)
+    from docdrift.core.git_utils import EMPTY_TREE
+    assert plan(setup, from_sha=EMPTY_TREE, to_sha=sha).skip == [("proj/b.py", "note already current")]
+    assert plan(setup, from_sha=EMPTY_TREE, to_sha=sha, force=True).document == ["proj/b.py"]
+    forced = plan(setup, mode="overview", force=True)  # nothing new, but --force
+    assert forced.overview == "would be regenerated" and not forced.up_to_date and not forced.document
+
+
+def test_dry_run_without_vault_assumes_everything_is_new(setup, llm, monkeypatch):
+    repo, _, cfg = setup
+    repo.commit({"proj/b.py": B})
+    monkeypatch.setattr(pipeline, "open_vault", lambda c: (_ for _ in ()).throw(ValueError("no vault")))
+    p = pipeline.plan_documentation(repo.root, cfg, log=lambda m: None)
+    assert not p.vault_checked and p.document == ["proj/b.py"]

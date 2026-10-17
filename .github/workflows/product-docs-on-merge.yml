@@ -30,7 +30,7 @@
 #   both:
 #     - Repository variable DOCDRIFT_PIP_SPEC: where to install docdrift from,
 #       pinned to a tag or commit, e.g.
-#       "git+https://github.com/<you>/docdrift.git@v1.0.1". Do NOT use plain
+#       "git+https://github.com/<you>/docdrift.git@v1.0.2". Do NOT use plain
 #       "docdrift" - that name on PyPI belongs to a different project. Required,
 #       except in the docdrift repository itself, which installs its own checkout.
 #     - Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).

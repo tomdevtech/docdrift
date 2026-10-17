@@ -67,6 +67,22 @@ class RunResult:
         return not self.failed
 
 
+@dataclass
+class RunPlan:
+    """What :func:`run_documentation` would do - see :func:`plan_documentation`."""
+
+    from_sha: str = ""
+    to_sha: str = ""
+    mode: str = "both"
+    document: list[str] = field(default_factory=list)  # files that would get a new note
+    skip: list[tuple[str, str]] = field(default_factory=list)  # (file, why it is skipped)
+    deleted: list[str] = field(default_factory=list)  # notes that would be marked as deleted
+    adr: str = ""  # whether an ADR would be drafted, and why
+    overview: str = ""  # whether _Architecture.md would be regenerated, and why
+    up_to_date: bool = False  # nothing to do
+    vault_checked: bool = True  # False: vault unreachable, current notes not detected
+
+
 # --- helpers --------------------------------------------------------------------
 
 
@@ -188,6 +204,11 @@ def _overview_context(repo_root: Path, cfg: DocdriftConfig, sha: str) -> tuple[s
 # --- stages ---------------------------------------------------------------------
 
 
+def _note_is_current(meta: dict, digest: str) -> bool:
+    """The note already describes exactly this content (see :func:`source_hash`)."""
+    return meta.get("source_hash") == digest and not meta.get("deleted")
+
+
 def _document_file(
     *, repo_root: Path, cfg: DocdriftConfig, client, vault: Vault, snap: Snapshot,
     path: Path, from_sha: str, to_sha: str, force: bool = False,
@@ -202,7 +223,7 @@ def _document_file(
     note = resolve_note_path(cfg.repo_name, path)
     meta_old, existing = vault.read_note(note)
     digest = source_hash(snap.new_sources[key])
-    if not force and meta_old.get("source_hash") == digest and not meta_old.get("deleted"):
+    if not force and _note_is_current(meta_old, digest):
         return False
     prompt = build_file_prompt(
         cfg.repo_name,
@@ -306,6 +327,45 @@ def _demote_headings(text: str) -> str:
     return re.sub(r"(?m)^#{1,6}\s+(.+?)\s*#*\s*$", r"**\1**", text)
 
 
+@dataclass
+class _OverviewInput:
+    sources: dict[str, str]
+    model: analysis.ProjectModel
+    docs: str
+    layout: str
+    fingerprint: str
+
+
+def _overview_input(
+    *, repo_root: Path, cfg: DocdriftConfig, vault: Vault | None,
+    st: state_module.State, snap: Snapshot | None, to_sha: str, force: bool = False,
+) -> tuple[_OverviewInput | None, str]:
+    """What stage 3 would describe, or ``(None, reason)`` if the note is current.
+
+    Shared by the run and the dry run, so both decide the same way. Without a
+    vault (dry run, vault unreachable) the note is assumed to exist.
+    """
+    note = architecture_note_path(cfg.repo_name)
+    existing = "?" if vault is None else vault.read_note(note)[1]
+    if force:
+        existing = ""
+    touched = snap is not None and any(
+        p.suffix == ".py" or _is_product_doc(p, cfg) for p in snap.changes.all
+    )
+    if existing and st.fingerprint and not touched:
+        return None, "current - no code or product doc changed"  # cheap exit, no file reads
+
+    sources = _python_sources(repo_root, cfg, to_sha)
+    model = analysis.build_project_model(sources)
+    docs, layout = _overview_context(repo_root, cfg, to_sha)
+    if not model.modules and not docs:
+        return None, "nothing to describe - no Python modules and no product docs"
+    fingerprint = source_hash(f"{model.fingerprint()}\n{docs}")
+    if existing and fingerprint == st.fingerprint:
+        return None, "current - public structure and product docs unchanged"
+    return _OverviewInput(sources, model, docs, layout, fingerprint), ""
+
+
 def _update_architecture(
     *, repo_root: Path, cfg: DocdriftConfig, client, vault: Vault,
     st: state_module.State, snap: Snapshot | None, to_sha: str, force: bool = False,
@@ -326,24 +386,13 @@ def _update_architecture(
     so they are complete and cannot be wrong. ``force`` regenerates the note even
     if nothing changed.
     """
-    note = architecture_note_path(cfg.repo_name)
-    _, existing = vault.read_note(note)
-    if force:
-        existing = ""
-    touched = snap is not None and any(
-        p.suffix == ".py" or _is_product_doc(p, cfg) for p in snap.changes.all
+    inp, _ = _overview_input(
+        repo_root=repo_root, cfg=cfg, vault=vault, st=st, snap=snap, to_sha=to_sha, force=force
     )
-    if existing and st.fingerprint and not touched:
-        return False  # cheap exit for pushes that touched neither code nor product docs
-
-    sources = _python_sources(repo_root, cfg, to_sha)
-    model = analysis.build_project_model(sources)
-    docs, layout = _overview_context(repo_root, cfg, to_sha)
-    if not model.modules and not docs:
+    if inp is None:
         return False
-    fingerprint = source_hash(f"{model.fingerprint()}\n{docs}")
-    if existing and fingerprint == st.fingerprint:
-        return False
+    note = architecture_note_path(cfg.repo_name)
+    sources, model, docs, layout, fingerprint = inp.sources, inp.model, inp.docs, inp.layout, inp.fingerprint
 
     # Step 1: one summary per package that has a public API.
     packages = _packages(model)
@@ -463,19 +512,113 @@ def run_documentation(
         ValueError: unknown ``mode``.
     """
     repo_root = Path(repo_root)
-    cfg = cfg or load_config(repo_root)
-    advance = True
-    if mode is not None:
-        if mode not in MODES:
-            raise ValueError(f"Unknown mode {mode!r} ({', '.join(MODES)})")
-        narrowed = replace(cfg, mode=mode)
-        advance = (narrowed.per_file_notes or not cfg.per_file_notes) and (
-            narrowed.architecture_note or not cfg.architecture_note
-        )
-        cfg = narrowed
+    cfg, advance = _with_mode(cfg or load_config(repo_root), mode)
     state_dir = repo_root / ".docdrift" / "state"
     with state_module.run_lock(state_dir):
         return _run(repo_root, cfg, from_sha, to_sha, client, vault, log, force, state_dir, advance)
+
+
+def _with_mode(cfg: DocdriftConfig, mode: str | None) -> tuple[DocdriftConfig, bool]:
+    """Apply a ``mode`` override; the flag says whether the run may advance ``last_sha``."""
+    if mode is None:
+        return cfg, True
+    if mode not in MODES:
+        raise ValueError(f"Unknown mode {mode!r} ({', '.join(MODES)})")
+    narrowed = replace(cfg, mode=mode)
+    advance = (narrowed.per_file_notes or not cfg.per_file_notes) and (
+        narrowed.architecture_note or not cfg.architecture_note
+    )
+    return narrowed, advance
+
+
+def plan_documentation(
+    repo_root: Path | str,
+    cfg: DocdriftConfig | None = None,
+    from_sha: str | None = None,
+    to_sha: str | None = None,
+    *,
+    vault: Vault | None = None,
+    log: Log = print,
+    force: bool = False,
+    mode: str | None = None,
+) -> RunPlan:
+    """What :func:`run_documentation` would do with the same arguments - the dry run.
+
+    Uses only git, the AST and the vault's notes (to detect current notes): no LLM
+    call, nothing is written, the state stays untouched and no lock is taken. If
+    the vault cannot be opened, every changed file counts as "would document"
+    (``vault_checked`` is ``False``).
+
+    Raises:
+        ValueError: unknown ``mode``.
+    """
+    repo_root = Path(repo_root)
+    cfg, _ = _with_mode(cfg or load_config(repo_root), mode)
+    st = state_module.load_state(repo_root / ".docdrift" / "state", cfg.repo_name)
+    to_sha = to_sha or git_utils.get_current_head(repo_root)
+    from_sha = from_sha or resolve_start(repo_root, st.last_sha, to_sha, log)
+    plan = RunPlan(from_sha=from_sha, to_sha=to_sha, mode=cfg.mode)
+    if vault is None:
+        try:
+            vault = open_vault(cfg)
+        except ValueError as exc:
+            log(f"Vault not available ({exc}) - current notes are not detected.")
+            plan.vault_checked = False
+
+    snap = None
+    if from_sha == to_sha:
+        plan.up_to_date = True
+    else:
+        snap = collect_changes(repo_root, cfg, from_sha, to_sha)
+        plan.up_to_date = snap is None
+
+    if snap is not None and cfg.per_file_notes:
+        for path in snap.changes.existing:
+            key = path.as_posix()
+            file_change = snap.changeset.files.get(key)
+            if file_change is not None and file_change.status == "unchanged":
+                plan.skip.append((key, "formatting/comments only"))
+                continue
+            if vault is not None and not force:
+                meta, _ = vault.read_note(resolve_note_path(cfg.repo_name, path))
+                if _note_is_current(meta, source_hash(snap.new_sources[key])):
+                    plan.skip.append((key, "note already current"))
+                    continue
+            plan.document.append(key)
+        for path in snap.changes.deleted:
+            if vault is None:
+                plan.deleted.append(path.as_posix())  # unknown whether a note exists
+                continue
+            meta, _ = vault.read_note(resolve_note_path(cfg.repo_name, path))
+            if meta and not meta.get("deleted"):
+                plan.deleted.append(path.as_posix())
+
+    if not cfg.adr.enabled:
+        plan.adr = "disabled"
+    elif snap is None:
+        plan.adr = "nothing to assess"
+    elif from_sha == git_utils.EMPTY_TREE:
+        plan.adr = "never on the first run"
+    elif any(a.get("to_sha") == to_sha for a in st.adrs):
+        plan.adr = "already drafted for this commit"
+    else:
+        messages = git_utils.get_commit_messages(repo_root, from_sha, to_sha)
+        total = adr_module.score(adr_module.assess(snap.changeset, snap.changes, messages))
+        verdict = "would draft one" if total >= cfg.adr.threshold else "below the threshold"
+        plan.adr = f"{verdict} (score {total}, threshold {cfg.adr.threshold})"
+
+    if not cfg.architecture_note:
+        plan.overview = "disabled (mode per-file)"
+    elif plan.up_to_date and not force:
+        plan.overview = "current - nothing new"
+    else:
+        inp, reason = _overview_input(
+            repo_root=repo_root, cfg=cfg, vault=vault, st=st, snap=snap, to_sha=to_sha, force=force
+        )
+        plan.overview = "would be regenerated" if inp is not None else reason
+        if inp is not None and plan.up_to_date:
+            plan.up_to_date = False  # --force regenerates the overview even without new commits
+    return plan
 
 
 def _run(repo_root, cfg, from_sha, to_sha, client, vault, log, force, state_dir, advance=True) -> RunResult:
