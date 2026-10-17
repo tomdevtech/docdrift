@@ -40,9 +40,11 @@ next task.
    GitHub only lets user tokens assign Copilot; the workflow's own `GITHUB_TOKEN`
    cannot. Without the secret the issue is still created, but unassigned - assign it
    to Copilot by hand.
-4. Set the repository variable `DOCDRIFT_PIP_SPEC` (required), pinned to a tag or
-   commit, e.g. `git+https://github.com/<you>/docdrift.git@v0.2.0`. Never plain
-   `docdrift`: that name on PyPI belongs to a different project.
+4. Set the repository variable `DOCDRIFT_PIP_SPEC`, pinned to a tag or commit, e.g.
+   `git+https://github.com/<you>/docdrift.git@v0.2.0`. Never plain `docdrift`: that
+   name on PyPI belongs to a different project. Not needed in the docdrift
+   repository itself: without the variable it installs its own checkout, i.e.
+   exactly the merged code.
 5. Commit `.docdrift/config.yaml` (the state folder stays in `.gitignore`) with
    `github_docs.enabled: true`. Adjust `docs_paths` if your docs live elsewhere.
    `github_docs.precheck: false` asks Copilot after every merge instead.

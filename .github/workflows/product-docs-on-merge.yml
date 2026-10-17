@@ -16,10 +16,11 @@
 #      Copilot (fine-grained: Actions, Contents, Issues, Pull requests =
 #      read/write). GitHub does not let GITHUB_TOKEN assign Copilot. Without the
 #      secret the issue is created unassigned and you assign Copilot by hand.
-#   3. Repository variable DOCDRIFT_PIP_SPEC (required): where to install docdrift
-#      from, pinned to a tag or commit, e.g.
+#   3. Repository variable DOCDRIFT_PIP_SPEC: where to install docdrift from,
+#      pinned to a tag or commit, e.g.
 #      "git+https://github.com/<you>/docdrift.git@v0.2.0". Do NOT use plain
-#      "docdrift" - that name on PyPI belongs to a different project.
+#      "docdrift" - that name on PyPI belongs to a different project. Required,
+#      except in the docdrift repository itself, which installs its own checkout.
 #   4. Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).
 #
 # Loops are prevented twice: Copilot's own pull requests (copilot/* branches)
@@ -67,11 +68,15 @@ jobs:
           SPEC: ${{ vars.DOCDRIFT_PIP_SPEC }}
         run: |
           # Never plain "docdrift": that name on PyPI belongs to a different project.
-          if [ -z "$SPEC" ]; then
+          if [ -n "$SPEC" ]; then
+            pip install "$SPEC"
+          elif [ -d src/docdrift ] && grep -Eq '^name *= *"docdrift"' pyproject.toml 2>/dev/null; then
+            # This repository is docdrift itself: use exactly the merged code.
+            pip install .
+          else
             echo "::error::Set the repository variable DOCDRIFT_PIP_SPEC, e.g. git+https://github.com/<you>/docdrift.git@<tag-or-commit>"
             exit 1
           fi
-          pip install "$SPEC"
 
       - name: Build the Copilot task
         shell: bash
