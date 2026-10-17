@@ -119,6 +119,7 @@ The hook never blocks or slows down a push: docdrift runs in the background and 
 to `.docdrift/logs/docdrift.log`. `DOCDRIFT_SYNC=1 git push` runs it in the foreground,
 `DOCDRIFT_SKIP=1 git push` skips it. Failed files are retried on the next run; a lock
 prevents two runs at once. `docdrift run --force` regenerates all notes of a range;
+`docdrift run --dry-run` shows what would be documented: no LLM call, nothing written to the vault.
 `docdrift run --mode overview` (or `per-file`, `both`) overrides `mode` for one run, e.g.
 `docdrift run --mode overview --force` rebuilds only the HLA note.
 

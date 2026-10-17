@@ -43,6 +43,8 @@ plus one - minutes instead of half an hour), `per-file` only the notes per file.
 stays open so the next regular run still does it. `docdrift run --mode overview --force`
 rebuilds the HLA note even when nothing new was committed.
 
+To preview what would be documented without actually running the LLM, use `docdrift run --dry-run`. It shows the plan of which files would be documented and what would be generated, but does not make any LLM calls and writes nothing to the vault. Combine it with `--mode` and `--force` to preview a specific mode.
+
 Re-run `docdrift init` after upgrading or after moving the virtualenv: the hook calls
 the Python interpreter docdrift is installed in, so it also works from IDEs and Git GUIs
 without an activated venv (an existing foreign hook is saved as `pre-push.bak`).
