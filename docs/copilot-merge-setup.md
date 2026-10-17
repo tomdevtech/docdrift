@@ -77,10 +77,14 @@ Free tiers are small, so docdrift works file by file (`docdrift llm-docs`, modul
    and the file itself, within `llm_max_chars` (default 24,000 characters). A file
    that does not fit is skipped and listed in the summary. **No source code is sent** -
    only these facts and the doc file.
-3. The model answers with find/replace edits. An edit is applied only if its `find`
-   text occurs **exactly once**; others are listed as "not applied". The model never
-   writes whole files, creates files or sees files outside `docs_paths`.
-4. With changes, the workflow pushes `docdrift/docs-pr-<n>` and opens a pull request
+3. The model answers with find/replace edits as JSON. With OpenRouter docdrift asks for
+   JSON mode; a reply without JSON is asked for once more, and a file whose model still
+   does not answer usably is skipped and listed in the summary. The run fails only if
+   no file got a usable answer.
+4. An edit is applied only if its `find` text occurs **exactly once**; others are
+   listed as "not applied". The model never writes whole files, creates files or sees
+   files outside `docs_paths`.
+5. With changes, the workflow pushes `docdrift/docs-pr-<n>` and opens a pull request
    whose description lists every file and reason. Without changes it comments on the
    merged pull request: "No documentation update needed", with the model's reasons.
 

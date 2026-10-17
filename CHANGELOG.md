@@ -8,6 +8,14 @@ release workflow uses the section of a version as the notes of its GitHub releas
 
 ## [Unreleased]
 
+### Fixed
+
+- Merge flow engine `llm`: a free model that answers with its reasoning instead of the
+  requested JSON no longer stops the run. docdrift asks OpenRouter for JSON mode, limits
+  the answer length, asks once more for the JSON only, and skips a doc file whose model
+  still does not answer usably (listed in the pull request or comment). The run fails
+  only if no doc file got a usable answer.
+
 ## [1.0.1] - 2026-10-17
 
 Fixes the merge flow without a Copilot licence: the engine `github-models` of 1.0.0
@@ -31,7 +39,6 @@ could not work because GitHub Models was retired.
   id, what success looks like after each step, OpenRouter account, privacy setting and
   key, and the merge workflow's `main` branch. More troubleshooting entries in
   [usage.md](docs/usage.md#troubleshooting).
-- `docs/runtime.md` is now part of the repository (linked from the 1.0.0 docs).
 
 ### Removed
 
@@ -91,8 +98,7 @@ First public release.
 - Release pipeline: every merge into `main` with a new version builds sdist and
   wheel, checks the wheel and creates the tag and GitHub release.
 - Guides: [setup](docs/setup.md), [usage](docs/usage.md),
-  [how it works](docs/how-it-works.md), [merge flow setup](docs/copilot-merge-setup.md)
-  and [measured runtimes](docs/runtime.md).
+  [how it works](docs/how-it-works.md) and [merge flow setup](docs/copilot-merge-setup.md).
 
 [Unreleased]: https://github.com/tomdevtech/docdrift/compare/v1.0.1...HEAD
 [1.0.1]: https://github.com/tomdevtech/docdrift/compare/v1.0.0...v1.0.1

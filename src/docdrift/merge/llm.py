@@ -15,6 +15,11 @@ Free tiers are small, so docdrift asks for one doc file at a time (at most
 answers with small find/replace edits instead of whole files. An edit is
 applied only if its ``find`` text occurs exactly once in the file - the model can
 never rewrite, truncate or create files, and it only sees files docdrift chose.
+
+Free models do not always follow the format. docdrift asks for JSON mode where the
+provider supports it (OpenRouter), asks once more when a reply contains no JSON,
+and skips a file whose model still does not answer usably - the run only fails
+when no file got a usable answer.
 """
 
 from __future__ import annotations
@@ -58,11 +63,26 @@ Rules:
 - `reason` is one or two sentences for the reviewer.
 """
 
+RETRY_PROMPT = (
+    "Your reply contained no JSON object. Return ONLY the JSON object now, "
+    'exactly in the form {"edits": [...], "reason": "..."} - no other text.'
+)
+
+#: Upper bound for one answer; small edits need far less, but reasoning models
+#: spend tokens before they answer.
+MAX_TOKENS = 4096
+
+_UNUSABLE = "the model gave no usable answer"
+
 _THINK = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.DOTALL | re.IGNORECASE)
 
 
 class LLMError(RuntimeError):
     """The LLM could not be reached or answered with something unusable."""
+
+
+class ReplyError(LLMError):
+    """The LLM answered, but not in the requested JSON format."""
 
 
 @dataclass
@@ -130,7 +150,14 @@ class LLMClient:
         self.api_key = api_key
         self.timeout = timeout
 
-    def chat(self, system: str, user: str) -> str:
+    def chat(self, system: str, user: str, history: list[tuple[str, str]] | None = None) -> str:
+        """Send one conversation; ``history`` adds ``(role, content)`` turns after ``user``."""
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        messages += [{"role": role, "content": content} for role, content in history or []]
+        body = {"model": self.model, "messages": messages, "temperature": 0.2, "max_tokens": MAX_TOKENS}
+        if "openrouter.ai" in self.url:
+            # JSON mode where the routed model supports it; OpenRouter drops it otherwise.
+            body["response_format"] = {"type": "json_object"}
         headers = {
             "Content-Type": "application/json",
             # Attribution headers for OpenRouter; other providers ignore them.
@@ -143,14 +170,7 @@ class LLMClient:
             r = requests.post(
                 self.url,
                 headers=headers,
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "temperature": 0.2,
-                },
+                json=body,
                 timeout=self.timeout,
             )
         except requests.exceptions.RequestException as exc:
@@ -182,13 +202,13 @@ def parse_reply(reply: str) -> tuple[list[Edit], str]:
     text = _THINK.sub("", reply).strip()
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
-        raise LLMError(f"reply contains no JSON object: {_shorten(reply, 200)}")
+        raise ReplyError(f"reply contains no JSON object: {_shorten(reply, 200)}")
     try:
         data = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise LLMError(f"reply is not valid JSON: {_shorten(reply, 200)}") from exc
+        raise ReplyError(f"reply is not valid JSON: {_shorten(reply, 200)}") from exc
     if not isinstance(data, dict):
-        raise LLMError("reply is not a JSON object")
+        raise ReplyError("reply is not a JSON object")
     edits = [
         Edit(str(e["find"]), str(e.get("replace", "")))
         for e in data.get("edits") or []
@@ -243,6 +263,21 @@ def build_prompt(task: CopilotTask, pr: PullRequest, path: str, content: str, li
     return f"{head}## Structural changes (AST)\n\n````text\n{structure}\n````\n\n{tail}"
 
 
+def ask(client, prompt: str) -> tuple[list[Edit], str]:
+    """Ask for one file's edits; if the reply has no usable JSON, ask once more.
+
+    Raises:
+        ReplyError: the second reply is not usable either.
+        LLMError: the LLM could not be reached.
+    """
+    reply = client.chat(SYSTEM_PROMPT, prompt)
+    try:
+        return parse_reply(reply)
+    except ReplyError:
+        retry = client.chat(SYSTEM_PROMPT, prompt, history=[("assistant", reply), ("user", RETRY_PROMPT)])
+        return parse_reply(retry)
+
+
 # --- public API ------------------------------------------------------------------
 
 
@@ -265,8 +300,12 @@ def update_docs(
         client: object with ``chat(system, user) -> str`` (e.g. :class:`LLMClient`).
         log: progress callback.
 
+    A file whose model does not answer usably even on the second try is skipped
+    and listed in the summary.
+
     Raises:
-        LLMError: the LLM failed (rate limit, wrong key or URL, unusable answer).
+        LLMError: the LLM failed (rate limit, wrong key or URL), or no file got a
+            usable answer.
     """
     repo_root = Path(repo_root)
     gd = cfg.github_docs
@@ -283,12 +322,24 @@ def update_docs(
             log(f"{path}: skipped - too large for the prompt")
             continue
         log(f"{path}: asking {gd.llm_model} ...")
-        edits, reason = parse_reply(client.chat(SYSTEM_PROMPT, prompt))
+        try:
+            edits, reason = ask(client, prompt)
+        except ReplyError as exc:
+            log(f"{path}: skipped - {exc}")
+            result.files.append(FileResult(path, skipped=f"{_UNUSABLE} ({_shorten(str(exc), 120)})"))
+            continue
         new, applied, rejected = apply_edits(content, edits)
         if applied:
             file.write_text(new, encoding="utf-8", newline="")
         log(f"{path}: {applied} edit(s) applied, {len(rejected)} rejected")
         result.files.append(FileResult(path, applied=applied, rejected=rejected, reason=reason))
+    answered = [f for f in result.files if not f.skipped]
+    unusable = [f for f in result.files if f.skipped.startswith(_UNUSABLE)]
+    if unusable and not answered:
+        raise LLMError(
+            "no doc file got a usable answer from the model - re-run the workflow, "
+            "or pin a model that follows instructions better in llm_model"
+        )
     return result
 
 
@@ -298,7 +349,9 @@ __all__ = [
     "LLMClient",
     "LLMError",
     "LLMResult",
+    "ReplyError",
     "apply_edits",
+    "ask",
     "build_prompt",
     "parse_reply",
     "select_files",
