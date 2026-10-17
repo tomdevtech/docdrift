@@ -2,10 +2,11 @@
 
 docdrift has two flows. The **local flow** (this page, stages 0-3) runs on every
 push with a local LLM and writes to the Obsidian vault. The **merge flow** (last
-section) runs in GitHub Actions after a merge into `main` and hands the repository
-docs (README, `docs/`) to the Copilot coding agent - but only when the change can
-matter to users. The split is strict: technical docs (notes, architecture, ADRs) come
-only from the local flow, product docs only from Copilot. Both share stage 0.
+section) runs in GitHub Actions after a merge into `main` and has the repository docs
+(README, `docs/`) checked by the Copilot coding agent or GitHub Models - but only when
+the change can matter to users. The split is strict: technical docs (notes,
+architecture, ADRs) come only from the local flow, product docs only from the merge
+flow. Both share stage 0.
 
 ## Local flow
 
@@ -100,16 +101,17 @@ contain invented modules or edges.
 
 `mode: overview` skips stage 1 and writes only this note; `mode: per-file` skips stage 3.
 
-## Merge flow (`merge/task.py`, `merge/docs_check.py`)
+## Merge flow (`merge/task.py`, `merge/docs_check.py`, `merge/models.py`)
 
 Purpose: keep the product docs (`README.md`, `docs_paths`) up to date after every merge
-into `main`. `docdrift copilot-task` runs in GitHub Actions; there is no LLM on the runner.
+into `main`. `docdrift copilot-task` runs in GitHub Actions and builds the task without
+an LLM; `github_docs.engine` decides who carries it out.
 
 1. **Range:** `git merge-base(base, head)..head` - exactly the PR's changes, even if
    `main` moved on, and the same for merge, squash and rebase merges.
 2. **Filter:** `ignore`, `docs_paths`, `docs/adr/` and `.github/` are left out. If
-   nothing is left, there is no task - so Copilot's docs PR cannot trigger the next
-   one. PRs from `copilot/*` branches are skipped as well.
+   nothing is left, there is no task - so a docs PR cannot trigger the next one. PRs
+   from `copilot/*` and `docdrift/*` branches are skipped as well.
 3. **Pre-check** (`merge/docs_check.py`) collects *hints* that users could notice the change:
 
    | Hint | Example |
@@ -132,7 +134,14 @@ into `main`. `docdrift copilot-task` runs in GitHub Actions; there is no LLM on 
 5. **Scope:** the issue states that only product docs are in scope - no architecture,
    internals, design rationale or ADRs, and no edits in `docs/adr/` (hand-written
    technical docs that some repositories keep there are never treated as product docs).
-6. The workflow posts the issue with a user token so Copilot can be assigned
+6. **Engine `copilot`:** the workflow posts the issue with a user token so Copilot can
+   be assigned; if that fails (no licence, agent disabled), it is posted unassigned.
+7. **Engine `github-models`:** `docdrift models-docs` builds the same task and asks
+   GitHub Models once per doc file (at most `models_max_files`, files with mentions
+   first, then `README.md`) for find/replace edits. An edit is applied only if its
+   `find` text occurs exactly once, so the model cannot rewrite or truncate a file.
+   The workflow commits the result to `docdrift/docs-pr-<n>` and opens a pull request,
+   or comments "No documentation update needed" on the merged one
    (see `copilot-merge-setup.md`).
 
 ## State and failures
@@ -159,6 +168,7 @@ an error - it never overwrites a note.
 - Notes of deleted files are marked, not removed; renames show up as delete + add.
 - The local flow describes the branch you push; notes of a branch you switch away from
   are updated on that branch's next push.
-- The merge flow cannot verify what Copilot writes; the pull request review does.
+- The merge flow cannot verify what Copilot or GitHub Models write; the pull request
+  review does.
 - Overloads and property setters share a name, so only the last is tracked.
 - Wikilinks between per-file notes depend on the model; the module map does not.

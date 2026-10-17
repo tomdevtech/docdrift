@@ -3,7 +3,7 @@
 Keeps your project documentation in sync with your code - automatically, with a
 **local** LLM (Ollama / LM Studio) and no data leaving your machine.
 
-> Status: under development.
+> Status: stable (1.0), actively developed. Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Two flows
 
@@ -13,13 +13,13 @@ Keeps your project documentation in sync with your code - automatically, with a
 | **Trigger** | every `git push` (pre-push hook) | every pull request merged into `main` |
 | **For** | you / your team (private) | users of the project (public) |
 | **Where** | Obsidian vault | the repository (`README.md`, `docs/`) |
-| **Written by** | a local LLM | the GitHub Copilot coding agent |
+| **Written by** | a local LLM | the Copilot coding agent or GitHub Models (`github_docs.engine`) |
 | **Only when needed** | formatting-only changes are skipped | a pre-check skips changes users cannot notice |
-| **Review** | you read the notes | Copilot's pull request |
+| **Review** | you read the notes | the docs pull request |
 
 The separation is strict: the local LLM writes **all** technical documentation, and only
-into the Obsidian vault. Copilot writes **only** product documentation and is told
-explicitly not to write architecture descriptions, internals or ADRs. The flows are
+into the Obsidian vault. The merge flow writes **only** product documentation and is
+told explicitly not to write architecture descriptions, internals or ADRs. The flows are
 independent; use either or both.
 
 ## What the local flow produces
@@ -44,21 +44,27 @@ Everything below `<!-- AUTO-DOC-END -->` in a note is yours and survives regener
 
 ## What the merge flow does
 
-After a merge into `main`, a GitHub Action runs `docdrift copilot-task` (no LLM on the
-runner):
+After a merge into `main`, a GitHub Action runs `docdrift copilot-task`:
 
 1. **Is it relevant for users?** A deterministic pre-check looks for public API changes,
    new or removed modules, packaging changes, files it cannot analyse, `feat`/breaking
    commits, and places where `README.md`/`docs/` mention changed code. A bug fix inside
-   a function nobody documents stops here - no Copilot request.
-2. **Copilot checks and updates.** Otherwise the Copilot coding agent gets an issue with
-   these hints and the exact `file:line` mentions. It first decides whether the docs are
-   still correct, updates only what is outdated, or changes nothing and says so in its
-   pull request (which you then close).
+   a function nobody documents stops here - no request at all.
+2. **Check and update.** Otherwise the docs are checked against these hints and the
+   exact `file:line` mentions, by the engine set in `github_docs.engine`:
+   - `copilot` (default, needs a Copilot licence): the Copilot coding agent gets an
+     issue and answers with a pull request.
+   - `github-models` (free, rate-limited): `docdrift models-docs` asks a model on GitHub
+     Models file by file for small find/replace edits, and the workflow opens the pull
+     request itself.
 
-Copilot only touches `README.md` and `docs_paths`; technical documentation is out of
-its scope.
-Copilot's own PRs and docs-only merges are skipped, so the flow cannot loop.
+   Either way the docs are first checked and only outdated parts are updated. If nothing
+   needs to change, Copilot says so in its pull request (which you close), and
+   `github-models` comments on the merged pull request instead.
+
+Only `README.md` and `docs_paths` are touched; technical documentation is out of scope.
+The docs pull requests themselves (`copilot/*`, `docdrift/*`) and docs-only merges are
+skipped, so the flow cannot loop.
 Setup: [docs/copilot-merge-setup.md](docs/copilot-merge-setup.md).
 
 ## How it works
@@ -78,6 +84,8 @@ the design is recorded in [docs/adr/](docs/adr/).
 
 ## Installation
 
+**Step-by-step guide for your own projects (local and on GitHub): [docs/setup.md](docs/setup.md).**
+
 ```bash
 pip install -e ".[dev]"      # from a local clone; requires Python >= 3.10
 ```
@@ -96,12 +104,13 @@ docdrift init                  # creates .docdrift/config.yaml, installs the pre
 # edit .docdrift/config.yaml (vault_path, model, ...)
 docdrift check                 # verifies config, vault, LLM + model, hook
 docdrift run                   # first run in the foreground; afterwards just git push
+docdrift status                # mode, model, where the notes go, last documented commit
 ```
 
 Other triggers and flows:
 
 ```bash
-docdrift init-github-product   # merge flow: Copilot keeps README/docs up to date
+docdrift init-github-product   # merge flow: Copilot or GitHub Models keeps README/docs up to date
 docdrift init-github-obsidian  # local flow via GitHub Actions instead of the hook
 docdrift adr --from <sha>      # ADR draft in the vault for a commit range, ignoring the threshold
 ```
@@ -123,6 +132,7 @@ print(result.documented, result.architecture_updated, result.adr_drafts)
 ```
 
 The merge flow is available as `docdrift.build_copilot_task(repo, cfg, PullRequest(...))`
+(the docs task; `docdrift.merge.models.update_docs` applies it with GitHub Models)
 (module `docdrift.merge.task`).
 
 `run_documentation` accepts an explicit `cfg`, `client` (any object with
@@ -143,7 +153,9 @@ All keys are optional except `obsidian`. Full example: [examples/docdrift.config
 | `mode` | `both` | `both`, `overview` (only the HLA note `_Architecture.md`) or `per-file` |
 | `adr.enabled` / `adr.threshold` | `true` / `4` | ADRs in the vault (local flow only) |
 | `github_docs.enabled` / `precheck` | `true` / `true` | merge flow: product docs task; skip changes users cannot notice |
-| `github_docs.assignee`, `docs_paths` | `copilot`, `docs/` + `README.md` | who gets the issue; which files are product docs |
+| `github_docs.engine` | `copilot` | `copilot` (issue for the coding agent, needs a Copilot licence) or `github-models` (free, the workflow opens the PR) |
+| `github_docs.assignee`, `docs_paths` | `copilot`, `docs/` + `README.md` | who gets the issue (`copilot` engine); which files are product docs |
+| `github_docs.models_model` / `models_max_files` / `models_max_chars` | `openai/gpt-4.1-mini` / `3` / `24000` | `github-models` engine: model, doc files per merge, prompt budget per file |
 | `ignore` | `[]` | globs or directories never documented (`.docdrift/` always is) |
 | `playbook_dir` | - | override bundled prompts (`base`, `python`, `typescript`, `fallback`, `architecture`, `adr`) |
 
@@ -162,16 +174,17 @@ src/docdrift/
     adr.py                       significance score, ADR drafting
     vault.py  llm_client.py  state.py  playbook_loader.py
     playbooks/  hooks/  github_workflows/
-  merge/                         merge flow: product docs -> Copilot (no LLM)
-    task.py                      the Copilot issue for a merged PR
+  merge/                         merge flow: product docs -> Copilot or GitHub Models
+    task.py                      the docs task (Copilot issue) for a merged PR
     docs_check.py                pre-check: could the product docs be outdated?
+    models.py                    engine github-models: find/replace edits per doc file
     github_workflows/
   setup/                         installation and diagnosis
     install.py                   config template, pre-push hook, workflows, .gitignore
     doctor.py                    `docdrift check`
   cli/                           `docdrift <command>` - thin layer, no logic
     commands.py  __main__.py
-docs/                            usage, how-it-works, runtime, setup guides, adr/
+docs/                            setup, usage, how-it-works, runtime, setup guides, adr/
 ```
 
 Every module belongs to a feature. `core` is shared; `local` and `merge` never
@@ -181,9 +194,20 @@ import each other, and only `cli` uses everything (enforced by
 ## Development
 
 ```bash
-pytest          # 132 tests, no LLM server, Obsidian or GitHub needed
+pytest          # 153 tests, no LLM server, Obsidian or GitHub needed
 ruff check src tests
 ```
+
+The workflow `.github/workflows/tests.yml` runs the tests on every pull request: Linux
+with Python 3.10 to 3.13, plus Windows with Python 3.12.
+
+**Releases** are built by `.github/workflows/release.yml` on every merge into `main`:
+it runs the tests and, if the `version` in `pyproject.toml` has no release yet, builds
+sdist and wheel, checks the wheel and creates the tag `v<version>` with a GitHub
+release. To release, raise the version and add its section to
+[CHANGELOG.md](CHANGELOG.md) in a pull request, then merge it - that section becomes
+the release notes. Merges without a version change only run the tests. Other projects then install
+`git+https://github.com/tomdevtech/docdrift.git@v<version>`.
 
 ## License
 

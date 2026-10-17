@@ -13,13 +13,18 @@ installed by ``docdrift init-github-product``). No LLM runs on the runner:
    of the docs that mention changed code. If nothing needs to change, Copilot
    changes no file and says so in its pull request, which you then close.
 
+The task is executed by the configured ``github_docs.engine``: the Copilot
+coding agent (this issue) or GitHub Models (:mod:`docdrift.merge.models`, which
+uses the same task and opens the pull request itself).
+
 Strict separation: Copilot writes **product docs only** - what users of the
 project read. Everything technical (per-file notes, architecture, ADRs) is the
 local flow's job and lives in the Obsidian vault. The issue says so explicitly,
 and technical docs in the repository (``docs/adr/``) are out of Copilot's scope.
 
-Loops are prevented twice: Copilot's own pull requests (``copilot/*`` branches)
-are skipped, and documentation files never count as a reason for a task.
+Loops are prevented twice: the docs pull requests themselves (``copilot/*`` and
+``docdrift/*`` branches) are skipped, and documentation files never count as a
+reason for a task.
 """
 
 from __future__ import annotations
@@ -36,6 +41,8 @@ from docdrift.merge.docs_check import TECHNICAL_DOC_DIRS, DocsCheck, check_docs,
 COPILOT_LOGIN = "copilot-swe-agent[bot]"
 #: Branch prefix of pull requests opened by the Copilot coding agent.
 COPILOT_BRANCH_PREFIX = "copilot/"
+#: Branch prefix of the docs pull requests opened by the ``github-models`` engine.
+DOCS_BRANCH_PREFIX = "docdrift/"
 #: Hidden marker in every generated issue (lets people and scripts find them).
 MARKER = "<!-- docdrift:merge-task -->"
 
@@ -63,6 +70,8 @@ class CopilotTask:
     body: str
     assignees: list[str] = field(default_factory=list)
     docs_check: DocsCheck = field(default_factory=DocsCheck)
+    #: AST changes of the merge (used by the ``github-models`` engine).
+    structure: str = ""
 
     def to_issue(self) -> dict:
         """Payload for ``POST /repos/{owner}/{repo}/issues``."""
@@ -249,6 +258,8 @@ def build_copilot_task(
 
     if pr.head_ref.startswith(COPILOT_BRANCH_PREFIX):
         return TaskResult(None, "pull request was opened by the Copilot coding agent")
+    if pr.head_ref.startswith(DOCS_BRANCH_PREFIX):
+        return TaskResult(None, "pull request is a docdrift docs update")
     if not cfg.github_docs.enabled:
         return TaskResult(None, "github_docs.enabled is false")
 
@@ -273,12 +284,14 @@ def build_copilot_task(
         body=body,
         assignees=resolve_assignees(cfg.github_docs.assignee),
         docs_check=check,
+        structure=snap.changeset.render_all(),
     )
     return TaskResult(task, "task created")
 
 
 __all__ = [
     "COPILOT_LOGIN",
+    "DOCS_BRANCH_PREFIX",
     "CopilotTask",
     "PullRequest",
     "TaskResult",

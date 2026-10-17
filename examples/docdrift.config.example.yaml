@@ -44,7 +44,14 @@ adr:
 github_docs:
   enabled: true          # after each merge: check README / docs_paths and update if needed
   precheck: true         # skip merges users cannot notice (saves Copilot requests); false = always ask
-  assignee: "copilot"    # the coding agent; or any GitHub login
+  # Who updates the docs:
+  #   "copilot"       -> issue for the Copilot coding agent (needs Copilot Pro/Pro+/Business/Enterprise)
+  #   "github-models" -> GitHub Models in the workflow (free, rate-limited); opens the PR itself
+  engine: "copilot"
+  assignee: "copilot"    # engine copilot: the coding agent; or any GitHub login
+  models_model: "openai/gpt-4.1-mini"   # engine github-models: model on GitHub Models
+  models_max_files: 3                   # doc files checked per merge (mentions first, then README)
+  models_max_chars: 24000               # prompt budget per file; the free tier allows ~8k tokens
   docs_paths:
     - "docs/"
     - "README.md"

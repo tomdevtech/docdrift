@@ -1,0 +1,118 @@
+# Builds a release whenever main gets a version that has not been released yet.
+#
+# How to release: raise `version` in pyproject.toml and add its section to
+# CHANGELOG.md in a pull request, then merge it. This workflow runs the tests, builds
+# sdist and wheel, and creates the tag v<version> plus a GitHub release with both
+# files; the release notes are that CHANGELOG.md section (generated notes if missing).
+# Merges without a version change (e.g. docs pull requests) only run the tests.
+#
+# Other repositories install a release with
+#   pip install "git+https://github.com/<owner>/docdrift.git@v<version>"
+# (or the wheel attached to the release) - e.g. as DOCDRIFT_PIP_SPEC.
+
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false  # never cancel a release half-way
+
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  release:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the tag and the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags and history for the release notes
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          tag="v${version}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/${tag}" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "${tag} is already released - raise the version in pyproject.toml for a new release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Releasing ${tag}."
+          fi
+
+      - name: Build sdist and wheel
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          pip install build
+          python -m build
+
+      - name: Check the wheel
+        # Installs the wheel into a clean environment: catches missing package data
+        # (playbooks, hook and workflow templates) before anything is published.
+        if: steps.version.outputs.exists == 'false'
+        shell: bash
+        run: |
+          python -m venv /tmp/check
+          /tmp/check/bin/pip install dist/*.whl
+          /tmp/check/bin/docdrift --version
+          /tmp/check/bin/python -c "from docdrift.local.playbook_loader import load_playbook; load_playbook('architecture'); load_playbook('package')"
+          /tmp/check/bin/python -c "from docdrift.setup.install import template; template('merge', 'github_workflows', 'product-docs-on-merge.yml.template'); template('local', 'hooks', 'pre-push.template')"
+
+      - name: Take the release notes from CHANGELOG.md
+        id: notes
+        if: steps.version.outputs.exists == 'false'
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # The section "## [<version>] ..." up to the next "## [" heading; relative
+          # links are made absolute, because a release page cannot resolve them.
+          python - <<'PY'
+          import os, re
+          tag = os.environ["TAG"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/blob/{tag}/"
+          text = open("CHANGELOG.md", encoding="utf-8").read() if os.path.exists("CHANGELOG.md") else ""
+          match = re.search(rf"^## \[{re.escape(tag[1:])}\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\Z)", text, re.S | re.M)
+          notes = match.group(1).strip() if match else ""
+          notes = re.sub(r"\]\((?!https?://|#)([^)]+)\)", lambda m: f"]({base}{m.group(1)})", notes)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "notes.md"), "w", encoding="utf-8") as f:
+              f.write(notes + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"found={'true' if notes else 'false'}\n")
+          print(notes or f"::warning::CHANGELOG.md has no section for {tag[1:]} - using generated notes.")
+          PY
+
+      - name: Create the GitHub release
+        if: steps.version.outputs.exists == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          FOUND: ${{ steps.notes.outputs.found }}
+        run: |
+          if [ "$FOUND" = "true" ]; then
+            notes=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            notes=(--generate-notes)
+          fi
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            "${notes[@]}"

@@ -1,0 +1,47 @@
+# Runs the test suite on every pull request. On main the release workflow
+# (release.yml) calls it before it builds a release, so it is not triggered by
+# pushes to main directly.
+# Linux covers all supported Python versions; Windows guards the Windows-specific
+# parts (pre-push hook via Git Bash, CRLF handling, paths).
+
+name: tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Called from release.yml the group gets its own prefix, so it never cancels itself.
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install docdrift with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run the tests
+        run: pytest -q

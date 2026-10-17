@@ -1,6 +1,8 @@
-"""Merge flow: product documentation in the repository, written by the Copilot coding agent.
+"""Merge flow: product documentation in the repository.
 
 Runs in GitHub Actions after a merge into ``main``; checks whether users could
-notice the change and, if so, opens an issue for Copilot. No LLM on the runner,
-never technical docs. Entry point: :func:`docdrift.merge.task.build_copilot_task`.
+notice the change and, if so, has the docs updated by the configured engine:
+an issue for the Copilot coding agent (:mod:`docdrift.merge.task`) or edits by
+GitHub Models (:mod:`docdrift.merge.models`). Never technical docs. Entry point:
+:func:`docdrift.merge.task.build_copilot_task`.
 """

@@ -324,7 +324,7 @@ def test_large_package_falls_back_to_its_outline(setup, llm):
 
 
 def test_mode_override_skipping_a_configured_stage_keeps_the_range_open(setup, llm):
-    repo, vault, _ = setup
+    repo, *_ = setup
     repo.commit({"proj/a.py": A})
     result = run(setup, llm, mode="overview")
     assert result.documented == [] and result.architecture_updated
