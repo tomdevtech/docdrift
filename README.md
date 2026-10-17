@@ -103,6 +103,7 @@ cd your-project
 docdrift init                  # creates .docdrift/config.yaml, installs the pre-push hook
 # edit .docdrift/config.yaml (vault_path, model, ...)
 docdrift check                 # verifies config, vault, LLM + model, hook
+docdrift run --dry-run         # what a run would do - no LLM call, nothing written
 docdrift run                   # first run in the foreground; afterwards just git push
 docdrift status                # mode, model, where the notes go, last documented commit
 ```
@@ -120,7 +121,8 @@ to `.docdrift/logs/docdrift.log`. `DOCDRIFT_SYNC=1 git push` runs it in the fore
 `DOCDRIFT_SKIP=1 git push` skips it. Failed files are retried on the next run; a lock
 prevents two runs at once. `docdrift run --force` regenerates all notes of a range;
 `docdrift run --mode overview` (or `per-file`, `both`) overrides `mode` for one run, e.g.
-`docdrift run --mode overview --force` rebuilds only the HLA note.
+`docdrift run --mode overview --force` rebuilds only the HLA note. Add `--dry-run` to any
+of these to see what the run would do - no LLM call, nothing written to the vault.
 
 ## Use from Python
 

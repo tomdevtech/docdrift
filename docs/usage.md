@@ -22,6 +22,7 @@ cd your-project
 docdrift init            # .docdrift/config.yaml, pre-push hook, .gitignore entries
 $EDITOR .docdrift/config.yaml
 docdrift check           # config, vault path, LLM server + model, context size, hook
+docdrift run --dry-run   # preview: which files, ADR, overview - no LLM call
 docdrift run             # documents the whole repository on the first run
 ```
 
@@ -38,10 +39,41 @@ vault root, so you never get `Projects/Projects/<repo>`.
 
 `mode` selects what is written: `both` (default) writes one note per file and the
 HLA note `_Architecture.md`, `overview` only the HLA note (one LLM call per package
-plus one - minutes instead of half an hour), `per-file` only the notes per file. `docdrift run --mode
-<mode>` overrides it for one run; if that skips a stage the config enables, the range
-stays open so the next regular run still does it. `docdrift run --mode overview --force`
-rebuilds the HLA note even when nothing new was committed.
+plus one - minutes instead of half an hour), `per-file` only the notes per file.
+`docdrift run --mode <mode>` overrides it for one run; if that skips a stage the config
+enables, the range stays open so the next regular run still does it.
+`docdrift run --mode overview --force` rebuilds the HLA note even when nothing new was
+committed.
+
+### Preview a run: `--dry-run`
+
+`docdrift run --dry-run` shows what a run would do, without an LLM call, without writing
+to the vault and without changing the state - useful before the first run (does
+`ignore` catch the right files?) and before a long one:
+
+```
+$ docdrift run --dry-run
+Range 47c87085..92ec757c (mode: both)
+Would document 2 file(s):
+  src/app/cli.py
+  src/app/core.py
+Would skip 1 file(s):
+  src/app/util.py (formatting/comments only)
+ADR draft: below the threshold (score 1, threshold 4)
+Architecture overview: would be regenerated
+Dry run - nothing was sent to the LLM or written to the vault.
+```
+
+- **Would document:** files that would get a new note. **Would skip:** files with only
+  formatting/comment changes, or whose note already describes the current content.
+- **Would mark:** notes of deleted files that would get the "Deleted" warning.
+- **ADR draft:** whether a draft would be written, with the significance score.
+- **Architecture overview:** whether `_Architecture.md` would be regenerated, or why not.
+
+It accepts the same options as a run - `--from`, `--to`, `--mode`, `--force` - and shows
+exactly what that run would do. If the vault cannot be opened, notes that are already
+current cannot be detected; the output says so and lists those files as "would
+document".
 
 Re-run `docdrift init` after upgrading or after moving the virtualenv: the hook calls
 the Python interpreter docdrift is installed in, so it also works from IDEs and Git GUIs
