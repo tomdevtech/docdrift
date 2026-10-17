@@ -42,7 +42,6 @@ plus one - minutes instead of half an hour), `per-file` only the notes per file.
 <mode>` overrides it for one run; if that skips a stage the config enables, the range
 stays open so the next regular run still does it. `docdrift run --mode overview --force`
 rebuilds the HLA note even when nothing new was committed.
-How long each mode takes: [runtime.md](runtime.md).
 
 Re-run `docdrift init` after upgrading or after moving the virtualenv: the hook calls
 the Python interpreter docdrift is installed in, so it also works from IDEs and Git GUIs
@@ -137,5 +136,5 @@ Copy a file from `src/docdrift/local/playbooks/` to `.docdrift/playbooks/`, set
 | `llm`: "No endpoints found matching your data policy" (OpenRouter) | the free model's providers may use prompts - allow free endpoints at openrouter.ai/settings/privacy, or pin another `:free` model |
 | Merge workflow never starts | it reacts to merges into `main` only - change `branches: [main]` in the workflow if your main branch has another name |
 | `llm`: "LLM answered 401" or "DOCDRIFT_LLM_API_KEY is not set" | secret missing or the key belongs to another provider than `llm_api_base_url` |
-| `llm`: "reply contains no JSON object" | the (free) model ignored the format; re-run, or pin a stronger model in `llm_model` |
+| `llm`: a file "skipped - the model gave no usable answer", or "no doc file got a usable answer" | the (free) model ignored the JSON format even when asked twice; re-run (`openrouter/free` may pick another model), or pin a model that follows instructions better in `llm_model` |
 | `llm`: branch pushed, but no PR | allow GitHub Actions to create pull requests (Settings > Actions > General) |

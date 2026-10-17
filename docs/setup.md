@@ -42,7 +42,6 @@ new terminal (pipx changes `PATH`) or call it with its full path.
 
 **3. Start a local LLM server** with a model loaded. Pick a model that fits
 **completely** into your GPU memory - one that spills into RAM is many times slower.
-Measured models and times: [runtime.md](runtime.md).
 
 - **LM Studio:** download a model in the app. Then load it with enough context and
   start the server - in the app (load the model, set *Context Length*, start the server
@@ -126,7 +125,7 @@ docdrift run                       # or: docdrift run --mode overview
 It prints `[n/total] <file>: documented` per file and ends with
 `Done. N documented, ...`. Then open `<vault>/Projects/<repo_name>/` in Obsidian: one
 note per file and `_Architecture.md`. A large repository can take a while with
-`both` (see [runtime.md](runtime.md)); an interrupted run continues where it stopped.
+`both` (one LLM call per file); an interrupted run continues where it stopped.
 
 **5. From now on just `git push`.** The hook runs docdrift in the background and only
 documents what changed; the push is never delayed or blocked. The log is

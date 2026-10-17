@@ -185,7 +185,7 @@ src/docdrift/
     doctor.py                    `docdrift check`
   cli/                           `docdrift <command>` - thin layer, no logic
     commands.py  __main__.py
-docs/                            setup, usage, how-it-works, runtime, setup guides, adr/
+docs/                            setup, usage, how-it-works, setup guides, adr/
 ```
 
 Every module belongs to a feature. `core` is shared; `local` and `merge` never

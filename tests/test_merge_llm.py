@@ -30,9 +30,23 @@ class FakeLLM:
         self.reason = reason
         self.prompts = []
 
-    def chat(self, system, user):
+    def chat(self, system, user, history=None):
         self.prompts.append(user)
         return json.dumps({"edits": self.edits, "reason": self.reason})
+
+
+class ChattyLLM:
+    """Thinks out loud instead of answering in JSON, unless asked again (``obeys_retry``)."""
+
+    def __init__(self, obeys_retry):
+        self.obeys_retry = obeys_retry
+        self.calls = []
+
+    def chat(self, system, user, history=None):
+        self.calls.append(history)
+        if history and self.obeys_retry:
+            return '{"edits": [{"find": "Call `work()`", "replace": "Call `work(n)`"}], "reason": "r"}'
+        return "We need to decide if README.md is still correct. Key points: ..."
 
 
 def _cfg(**gd):
@@ -101,6 +115,39 @@ def test_no_edits_means_no_update_needed(merged):
     assert (repo.root / "README.md").read_text(encoding="utf-8") == README
 
 
+def test_a_reply_without_json_is_asked_again(merged):
+    repo, base, head = merged
+    result, pr = _task(repo, _cfg(), base, head)
+    chatty = ChattyLLM(obeys_retry=True)
+    outcome = llm.update_docs(repo.root, _cfg(), result.task, pr, client=chatty, log=lambda m: None)
+    assert outcome.changed and len(chatty.calls) == 2
+    assert chatty.calls[1][0][0] == "assistant" and "ONLY the JSON" in chatty.calls[1][1][1]
+
+
+def test_unusable_answers_skip_the_file_and_fail_only_if_nothing_was_answered(merged):
+    repo, base, head = merged
+    result, pr = _task(repo, _cfg(), base, head)
+    with pytest.raises(llm.LLMError, match="no doc file got a usable answer"):
+        llm.update_docs(repo.root, _cfg(), result.task, pr, client=ChattyLLM(obeys_retry=False), log=lambda m: None)
+
+    # Two files: the first answer is unusable, the second fine -> the run goes on.
+    (repo.root / "docs").mkdir()
+    (repo.root / "docs" / "guide.md").write_text("Use `work()`.\n", encoding="utf-8")
+    result.task.docs_check.doc_files = ["README.md", "docs/guide.md"]
+    result.task.docs_check.mentions = [DocMention("docs/guide.md", 1, "work", "changed", "x")]
+
+    class FirstChatty(ChattyLLM):
+        def chat(self, system, user, history=None):
+            if "File `docs/guide.md`" in user:
+                return "I think the guide is fine."
+            return FakeLLM().chat(system, user)
+
+    outcome = llm.update_docs(repo.root, _cfg(), result.task, pr, client=FirstChatty(False), log=lambda m: None)
+    guide, readme = outcome.files
+    assert guide.skipped.startswith("the model gave no usable answer") and readme.applied == 1
+    assert "skipped - the model gave no usable answer" in outcome.summary(pr, "m")
+
+
 def test_file_too_large_for_the_budget_is_skipped(merged):
     repo, base, head = merged
     result, pr = _task(repo, _cfg(), base, head)
@@ -145,8 +192,12 @@ def test_client_sends_key_and_reports_errors(monkeypatch):
     assert seen["url"] == "https://openrouter.ai/api/v1/chat/completions"
     assert seen["headers"]["Authorization"] == "Bearer k" and seen["body"]["model"] == "openrouter/free"
 
-    llm.LLMClient("http://localhost:1234/v1", "m").chat("s", "u")
+    assert seen["body"]["response_format"] == {"type": "json_object"} and seen["body"]["max_tokens"]
+
+    llm.LLMClient("http://localhost:1234/v1", "m").chat("s", "u", history=[("assistant", "a"), ("user", "b")])
     assert "Authorization" not in seen["headers"]  # a local server needs no key
+    assert "response_format" not in seen["body"]  # JSON mode only where it is known to work
+    assert [m["role"] for m in seen["body"]["messages"]] == ["system", "user", "assistant", "user"]
 
     cases = [
         (_Response(ok=False, status_code=429, text="rate limit"), "429"),
