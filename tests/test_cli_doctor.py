@@ -101,3 +101,18 @@ def test_status_shows_mode_vault_and_last_commit(initialised, tmp_path):
     assert "mode        overview" in result.output
     assert str(tmp_path / "Vault" / "Projects" / initialised.root.name) in result.output
     assert "documented  never" in result.output and "_Architecture.md" in result.output
+
+
+def test_run_dry_run_prints_the_plan_and_writes_nothing(initialised, tmp_path):
+    vault = tmp_path / "Vault"
+    vault.mkdir()
+    cfg = initialised.root / ".docdrift" / "config.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8").replace('"~/ObsidianVault"', f'"{vault.as_posix()}"'), encoding="utf-8")
+    initialised.commit({"pkg/a.py": '"""A."""\ndef a():\n    return 1\n'})
+    result = CliRunner().invoke(cli.main, ["run", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Would document 2 file(s):" in result.output  # pkg/a.py and the .gitignore from init
+    assert "\n  pkg/a.py\n" in result.output
+    assert "Architecture overview: would be regenerated" in result.output
+    assert "Dry run - nothing was sent to the LLM" in result.output
+    assert not any(vault.iterdir())

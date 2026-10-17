@@ -8,6 +8,16 @@ release workflow uses the section of a version as the notes of its GitHub releas
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-17
+
+### Added
+
+- `docdrift run --dry-run`: shows which files would be documented or skipped (and why),
+  whether notes of deleted files would be marked, whether an ADR would be drafted and
+  whether the architecture overview would be regenerated - without an LLM call, without
+  writing to the vault and without touching the state. Combines with `--from`, `--to`,
+  `--mode` and `--force`; Python API: `plan_documentation`.
+
 ### Fixed
 
 - Merge flow engine `llm`: a free model that answers with its reasoning instead of the
@@ -100,6 +110,7 @@ First public release.
 - Guides: [setup](docs/setup.md), [usage](docs/usage.md),
   [how it works](docs/how-it-works.md) and [merge flow setup](docs/copilot-merge-setup.md).
 
-[Unreleased]: https://github.com/tomdevtech/docdrift/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/tomdevtech/docdrift/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/tomdevtech/docdrift/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tomdevtech/docdrift/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tomdevtech/docdrift/releases/tag/v1.0.0

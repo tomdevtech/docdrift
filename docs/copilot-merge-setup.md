@@ -58,7 +58,7 @@ next task.
      Actions to create and approve pull requests**. Without it the docs branch is
      pushed, but you open the pull request by hand.
 4. Set the repository variable `DOCDRIFT_PIP_SPEC`, pinned to a tag or commit, e.g.
-   `git+https://github.com/<you>/docdrift.git@v1.0.1`. Never plain `docdrift`: that
+   `git+https://github.com/<you>/docdrift.git@v1.0.2`. Never plain `docdrift`: that
    name on PyPI belongs to a different project. Not needed in the docdrift
    repository itself: without the variable it installs its own checkout, i.e.
    exactly the merged code.

@@ -161,17 +161,46 @@ def status() -> None:
     "--mode", type=click.Choice(config_module.MODES, case_sensitive=False), default=None,
     help="Override `mode` from the config for this run: per-file notes, the overview (HLA) or both.",
 )
-def run(from_sha: str | None, to_sha: str | None, force: bool, mode: str | None) -> None:
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Only show what would be documented: no LLM call, nothing written to the vault.",
+)
+def run(from_sha: str | None, to_sha: str | None, force: bool, mode: str | None, dry_run: bool) -> None:
     """Update the technical documentation (per-file notes, ADR drafts, architecture overview)."""
+    args = {
+        "from_sha": from_sha, "to_sha": to_sha, "log": click.echo, "force": force,
+        "mode": mode.lower() if mode else None,
+    }
     try:
-        result = pipeline.run_documentation(
-            _find_repo_root(), from_sha=from_sha, to_sha=to_sha, log=click.echo, force=force,
-            mode=mode.lower() if mode else None,
-        )
+        if dry_run:
+            _print_plan(pipeline.plan_documentation(_find_repo_root(), **args))
+            return
+        result = pipeline.run_documentation(_find_repo_root(), **args)
     except (RunLocked, FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if not result.ok:
         sys.exit(1)
+
+
+def _print_plan(plan: pipeline.RunPlan) -> None:
+    if plan.up_to_date:
+        click.echo("Nothing new to document.")
+    else:
+        click.echo(f"Range {plan.from_sha[:8]}..{plan.to_sha[:8]} (mode: {plan.mode})")
+    if plan.document:
+        click.echo(f"Would document {len(plan.document)} file(s):")
+        click.echo("".join(f"  {path}\n" for path in plan.document), nl=False)
+    if plan.skip:
+        click.echo(f"Would skip {len(plan.skip)} file(s):")
+        click.echo("".join(f"  {path} ({why})\n" for path, why in plan.skip), nl=False)
+    if plan.deleted:
+        click.echo(f"Would mark {len(plan.deleted)} note(s) of deleted files:")
+        click.echo("".join(f"  {path}\n" for path in plan.deleted), nl=False)
+    click.echo(f"ADR draft: {plan.adr}")
+    click.echo(f"Architecture overview: {plan.overview}")
+    if not plan.vault_checked:
+        click.echo("Note: the vault was not reachable, so current notes are listed as 'would document'.")
+    click.echo("Dry run - nothing was sent to the LLM or written to the vault.")
 
 
 @main.command("adr")
