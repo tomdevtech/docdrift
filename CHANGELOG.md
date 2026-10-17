@@ -8,6 +8,37 @@ release workflow uses the section of a version as the notes of its GitHub releas
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-17
+
+Fixes the merge flow without a Copilot licence: the engine `github-models` of 1.0.0
+could not work because GitHub Models was retired.
+
+### Added
+
+- Merge flow engine `llm`: updates the product docs with any OpenAI-compatible LLM -
+  by default OpenRouter's free models (`openrouter/free`), or Groq, Google Gemini, or
+  a local LM Studio / Ollama on a self-hosted runner. Configured with
+  `github_docs.llm_api_base_url`, `llm_model`, `llm_max_files` and `llm_max_chars`;
+  the API key is the repository secret `DOCDRIFT_LLM_API_KEY`. Command:
+  `docdrift llm-docs`.
+- The `llm` engine tolerates reasoning blocks, code fences and text around the JSON
+  answer, which free models often add.
+
+### Changed
+
+- [Setup guide](docs/setup.md) completed: prerequisites (Git for Windows), pipx and
+  Windows paths, loading an LM Studio / Ollama model with enough context and finding its
+  id, what success looks like after each step, OpenRouter account, privacy setting and
+  key, and the merge workflow's `main` branch. More troubleshooting entries in
+  [usage.md](docs/usage.md#troubleshooting).
+- `docs/runtime.md` is now part of the repository (linked from the 1.0.0 docs).
+
+### Removed
+
+- Engine `github-models` and the `models_*` settings: GitHub Models was retired on
+  2026-07-30, so the engine could not work. A config that still sets
+  `engine: github-models` now fails with a hint to use `engine: llm`.
+
 ## [1.0.0] - 2026-10-17
 
 First public release.
@@ -46,7 +77,7 @@ First public release.
   merged pull request whether users could notice the change and, if so, has
   `README.md` and `docs_paths` checked and updated in a pull request.
 - `github_docs.engine`: `copilot` (an issue for the Copilot coding agent; posted
-  unassigned if Copilot cannot be assigned) or `github-models` (free GitHub Models
+  unassigned if Copilot cannot be assigned) or `github-models` (GitHub Models
   inference with find/replace edits per doc file; the workflow opens the docs pull
   request or comments that no update is needed).
 - Strict separation: the merge flow writes product docs only, never architecture,
@@ -63,5 +94,6 @@ First public release.
   [how it works](docs/how-it-works.md), [merge flow setup](docs/copilot-merge-setup.md)
   and [measured runtimes](docs/runtime.md).
 
-[Unreleased]: https://github.com/tomdevtech/docdrift/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/tomdevtech/docdrift/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/tomdevtech/docdrift/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tomdevtech/docdrift/releases/tag/v1.0.0

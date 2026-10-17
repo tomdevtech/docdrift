@@ -16,7 +16,9 @@ obsidian:
 github_docs:
   enabled: true
   precheck: true
-  engine: "github-models"         # copilot | github-models (no Copilot licence needed)
+  engine: "llm"                   # copilot | llm (no Copilot licence needed)
+  llm_api_base_url: "https://openrouter.ai/api/v1"
+  llm_model: "openrouter/free"    # or pin a "<vendor>/<model>:free" model
   assignee: "copilot"
   docs_paths:
     - "docs/"

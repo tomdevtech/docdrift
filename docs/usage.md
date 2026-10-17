@@ -89,8 +89,8 @@ Write your own remarks **below** `<!-- AUTO-DOC-END -->`; they are kept.
 - **change users could notice**, with `engine: copilot`: an issue for Copilot with the
   hints and the exact doc lines that mention changed code. Copilot's pull request either
   updates the outdated parts or says "No documentation update needed" - then just close it.
-- **change users could notice**, with `engine: github-models`: GitHub Models checks up
-  to `models_max_files` doc files and the workflow opens a pull request from
+- **change users could notice**, with `engine: llm`: the LLM (default: OpenRouter's free
+  models) checks up to `llm_max_files` doc files and the workflow opens a pull request from
   `docdrift/docs-pr-<n>`, or comments "No documentation update needed" on the merged PR.
 
 Tips: write `feat:` (or `!` for breaking) in the PR title when behaviour changes
@@ -130,8 +130,12 @@ Copy a file from `src/docdrift/local/playbooks/` to `.docdrift/playbooks/`, set
 | A file is never documented | matches `ignore`, is binary, or only formatting/comments changed |
 | `ADR draft failed` | model ignored the format; retry with `docdrift adr --from <sha>` or use a larger model |
 | REST API errors | Obsidian must be open; see `obsidian-rest-api-setup.md` |
-| Merge issue is not assigned to Copilot | secret `DOCDRIFT_COPILOT_TOKEN` missing, no Copilot Pro/Pro+/Business/Enterprise licence, or the coding agent is not enabled; without a licence use `engine: github-models` |
+| Merge issue is not assigned to Copilot | secret `DOCDRIFT_COPILOT_TOKEN` missing, no Copilot Pro/Pro+/Business/Enterprise licence, or the coding agent is not enabled; without a licence use `engine: llm` |
 | Merge workflow logs "Nothing to do" | docs PR (`copilot/*`, `docdrift/*`), docs-only change, or only internal changes (pre-check); the log lists the hints it found |
 | Copilot opened a PR with "No documentation update needed" | the pre-check saw a hint, Copilot found the docs still correct - close the PR |
-| `github-models`: "GitHub Models answered 429" | free rate limit reached; re-run the workflow later or lower `models_max_files` |
-| `github-models`: branch pushed, but no PR | allow GitHub Actions to create pull requests (Settings > Actions > General) |
+| `llm`: "LLM answered 429" | free rate limit reached; re-run the workflow later, lower `llm_max_files` or pin another `:free` model |
+| `llm`: "No endpoints found matching your data policy" (OpenRouter) | the free model's providers may use prompts - allow free endpoints at openrouter.ai/settings/privacy, or pin another `:free` model |
+| Merge workflow never starts | it reacts to merges into `main` only - change `branches: [main]` in the workflow if your main branch has another name |
+| `llm`: "LLM answered 401" or "DOCDRIFT_LLM_API_KEY is not set" | secret missing or the key belongs to another provider than `llm_api_base_url` |
+| `llm`: "reply contains no JSON object" | the (free) model ignored the format; re-run, or pin a stronger model in `llm_model` |
+| `llm`: branch pushed, but no PR | allow GitHub Actions to create pull requests (Settings > Actions > General) |

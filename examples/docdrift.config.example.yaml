@@ -46,12 +46,14 @@ github_docs:
   precheck: true         # skip merges users cannot notice (saves Copilot requests); false = always ask
   # Who updates the docs:
   #   "copilot"       -> issue for the Copilot coding agent (needs Copilot Pro/Pro+/Business/Enterprise)
-  #   "github-models" -> GitHub Models in the workflow (free, rate-limited); opens the PR itself
+  #   "llm"           -> any OpenAI-compatible LLM in the workflow; opens the PR itself.
+  #                      API key: repository secret DOCDRIFT_LLM_API_KEY
   engine: "copilot"
   assignee: "copilot"    # engine copilot: the coding agent; or any GitHub login
-  models_model: "openai/gpt-4.1-mini"   # engine github-models: model on GitHub Models
-  models_max_files: 3                   # doc files checked per merge (mentions first, then README)
-  models_max_chars: 24000               # prompt budget per file; the free tier allows ~8k tokens
+  llm_api_base_url: "https://openrouter.ai/api/v1"   # engine llm: OpenRouter, Groq, Gemini, LM Studio, ...
+  llm_model: "openrouter/free"          # engine llm: any free model; or pin "<vendor>/<model>:free"
+  llm_max_files: 3                      # doc files checked per merge (mentions first, then README)
+  llm_max_chars: 24000                  # prompt budget per file; keep it small for free tiers
   docs_paths:
     - "docs/"
     - "README.md"

@@ -13,7 +13,7 @@ Keeps your project documentation in sync with your code - automatically, with a
 | **Trigger** | every `git push` (pre-push hook) | every pull request merged into `main` |
 | **For** | you / your team (private) | users of the project (public) |
 | **Where** | Obsidian vault | the repository (`README.md`, `docs/`) |
-| **Written by** | a local LLM | the Copilot coding agent or GitHub Models (`github_docs.engine`) |
+| **Written by** | a local LLM | the Copilot coding agent or an LLM such as OpenRouter's free models (`github_docs.engine`) |
 | **Only when needed** | formatting-only changes are skipped | a pre-check skips changes users cannot notice |
 | **Review** | you read the notes | the docs pull request |
 
@@ -54,13 +54,13 @@ After a merge into `main`, a GitHub Action runs `docdrift copilot-task`:
    exact `file:line` mentions, by the engine set in `github_docs.engine`:
    - `copilot` (default, needs a Copilot licence): the Copilot coding agent gets an
      issue and answers with a pull request.
-   - `github-models` (free, rate-limited): `docdrift models-docs` asks a model on GitHub
-     Models file by file for small find/replace edits, and the workflow opens the pull
-     request itself.
+   - `llm` (any OpenAI-compatible API, by default OpenRouter's free models):
+     `docdrift llm-docs` asks the model file by file for small find/replace edits, and
+     the workflow opens the pull request itself.
 
    Either way the docs are first checked and only outdated parts are updated. If nothing
-   needs to change, Copilot says so in its pull request (which you close), and
-   `github-models` comments on the merged pull request instead.
+   needs to change, Copilot says so in its pull request (which you close), and `llm`
+   comments on the merged pull request instead.
 
 Only `README.md` and `docs_paths` are touched; technical documentation is out of scope.
 The docs pull requests themselves (`copilot/*`, `docdrift/*`) and docs-only merges are
@@ -110,7 +110,7 @@ docdrift status                # mode, model, where the notes go, last documente
 Other triggers and flows:
 
 ```bash
-docdrift init-github-product   # merge flow: Copilot or GitHub Models keeps README/docs up to date
+docdrift init-github-product   # merge flow: Copilot or an LLM keeps README/docs up to date
 docdrift init-github-obsidian  # local flow via GitHub Actions instead of the hook
 docdrift adr --from <sha>      # ADR draft in the vault for a commit range, ignoring the threshold
 ```
@@ -132,7 +132,7 @@ print(result.documented, result.architecture_updated, result.adr_drafts)
 ```
 
 The merge flow is available as `docdrift.build_copilot_task(repo, cfg, PullRequest(...))`
-(the docs task; `docdrift.merge.models.update_docs` applies it with GitHub Models)
+(the docs task; `docdrift.merge.llm.update_docs` applies it with an LLM)
 (module `docdrift.merge.task`).
 
 `run_documentation` accepts an explicit `cfg`, `client` (any object with
@@ -153,9 +153,10 @@ All keys are optional except `obsidian`. Full example: [examples/docdrift.config
 | `mode` | `both` | `both`, `overview` (only the HLA note `_Architecture.md`) or `per-file` |
 | `adr.enabled` / `adr.threshold` | `true` / `4` | ADRs in the vault (local flow only) |
 | `github_docs.enabled` / `precheck` | `true` / `true` | merge flow: product docs task; skip changes users cannot notice |
-| `github_docs.engine` | `copilot` | `copilot` (issue for the coding agent, needs a Copilot licence) or `github-models` (free, the workflow opens the PR) |
+| `github_docs.engine` | `copilot` | `copilot` (issue for the coding agent, needs a Copilot licence) or `llm` (any OpenAI-compatible LLM, the workflow opens the PR) |
 | `github_docs.assignee`, `docs_paths` | `copilot`, `docs/` + `README.md` | who gets the issue (`copilot` engine); which files are product docs |
-| `github_docs.models_model` / `models_max_files` / `models_max_chars` | `openai/gpt-4.1-mini` / `3` / `24000` | `github-models` engine: model, doc files per merge, prompt budget per file |
+| `github_docs.llm_api_base_url` / `llm_model` | `https://openrouter.ai/api/v1` / `openrouter/free` | `llm` engine: API root and model; the key is the secret `DOCDRIFT_LLM_API_KEY` |
+| `github_docs.llm_max_files` / `llm_max_chars` | `3` / `24000` | `llm` engine: doc files per merge, prompt budget per file |
 | `ignore` | `[]` | globs or directories never documented (`.docdrift/` always is) |
 | `playbook_dir` | - | override bundled prompts (`base`, `python`, `typescript`, `fallback`, `architecture`, `adr`) |
 
@@ -174,10 +175,10 @@ src/docdrift/
     adr.py                       significance score, ADR drafting
     vault.py  llm_client.py  state.py  playbook_loader.py
     playbooks/  hooks/  github_workflows/
-  merge/                         merge flow: product docs -> Copilot or GitHub Models
+  merge/                         merge flow: product docs -> Copilot or an LLM
     task.py                      the docs task (Copilot issue) for a merged PR
     docs_check.py                pre-check: could the product docs be outdated?
-    models.py                    engine github-models: find/replace edits per doc file
+    llm.py                       engine llm: find/replace edits per doc file
     github_workflows/
   setup/                         installation and diagnosis
     install.py                   config template, pre-push hook, workflows, .gitignore

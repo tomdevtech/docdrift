@@ -47,7 +47,7 @@ adr:
 github_docs:                      # merge flow (product docs only), see `docdrift init-github-product`
   enabled: true                   # after a merge: check and update README / docs_paths
   precheck: true                  # skip merges that cannot affect users (saves requests)
-  engine: "copilot"               # copilot (needs a Copilot licence) | github-models (free, rate-limited)
+  engine: "copilot"               # copilot (needs a Copilot licence) | llm (e.g. OpenRouter, key: DOCDRIFT_LLM_API_KEY)
   assignee: "copilot"
   docs_paths:
     - "docs/"

@@ -1,19 +1,20 @@
-"""Merge flow engine ``github-models``: update the product docs with GitHub Models.
+"""Merge flow engine ``llm``: update the product docs with any OpenAI-compatible LLM.
 
 The alternative to the Copilot coding agent for accounts without a Copilot
-licence (``github_docs.engine: github-models``). GitHub Models is free with rate
-limits and can be called with the workflow's own ``GITHUB_TOKEN`` (permission
-``models: read``); the workflow opens the pull request itself.
+licence (``github_docs.engine: llm``). It works with every OpenAI-compatible
+chat completions API: OpenRouter (default, free models), Groq, Google Gemini,
+Mistral, or a local LM Studio / Ollama on a self-hosted runner. The workflow
+opens the pull request itself.
 
 Input is the same task as for Copilot (:func:`docdrift.merge.task.build_copilot_task`):
-the pre-check's hints, the doc lines that mention changed code and the AST changes.
+the pre-check's hints, the doc lines that mention changed code and the AST
+changes. Source code is never sent, only the doc files themselves.
 
-The free tier allows only about 8,000 input tokens per request, so docdrift
-asks for one doc file at a time (at most ``models_max_files``, files with
-mentions first, then ``README.md``) and the model answers with small
-find/replace edits instead of whole files. An edit is applied only if its
-``find`` text occurs exactly once in the file - the model can never rewrite,
-truncate or create files, and it only sees files docdrift chose.
+Free tiers are small, so docdrift asks for one doc file at a time (at most
+``llm_max_files``, files with mentions first, then ``README.md``) and the model
+answers with small find/replace edits instead of whole files. An edit is
+applied only if its ``find`` text occurs exactly once in the file - the model can
+never rewrite, truncate or create files, and it only sees files docdrift chose.
 """
 
 from __future__ import annotations
@@ -29,8 +30,6 @@ from docdrift.core.changes import Log
 from docdrift.core.config import DocdriftConfig
 from docdrift.merge.task import MARKER, CopilotTask, PullRequest
 
-ENDPOINT = "https://models.github.ai/inference/chat/completions"
-
 SYSTEM_PROMPT = """\
 You keep ONE product documentation file of a software project up to date after a
 pull request was merged. Product documentation is what users read: what the
@@ -41,7 +40,7 @@ of this file that mention changed code, the structural code changes (computed
 from the AST) and the current file.
 
 First decide whether this file is still correct and complete for users. Then
-return ONLY a JSON object, no code fence:
+return ONLY a JSON object, nothing before or after it, no code fence:
 
 {"edits": [{"find": "...", "replace": "..."}], "reason": "..."}
 
@@ -59,9 +58,11 @@ Rules:
 - `reason` is one or two sentences for the reviewer.
 """
 
+_THINK = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.DOTALL | re.IGNORECASE)
 
-class ModelsError(RuntimeError):
-    """GitHub Models could not be reached or answered with an error."""
+
+class LLMError(RuntimeError):
+    """The LLM could not be reached or answered with something unusable."""
 
 
 @dataclass
@@ -82,7 +83,7 @@ class FileResult:
 
 
 @dataclass
-class ModelsResult:
+class LLMResult:
     """Outcome of :func:`update_docs`; files are changed in the working tree."""
 
     files: list[FileResult] = field(default_factory=list)
@@ -93,10 +94,7 @@ class ModelsResult:
 
     def summary(self, pr: PullRequest, model: str) -> str:
         """Markdown for the docs pull request (or the comment when nothing changed)."""
-        head = (
-            f"Product docs check for #{pr.number} by docdrift with GitHub Models (`{model}`)."
-        )
-        lines = [MARKER, head, ""]
+        lines = [MARKER, f"Product docs check for #{pr.number} by docdrift with `{model}`.", ""]
         if not self.changed:
             lines += ["**No documentation update needed.**", ""]
         for f in self.files:
@@ -119,24 +117,32 @@ def _shorten(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-class ModelsClient:
-    """Minimal client for the GitHub Models chat completions endpoint."""
+class LLMClient:
+    """Minimal client for an OpenAI-compatible chat completions endpoint.
 
-    def __init__(self, token: str, model: str, endpoint: str = ENDPOINT, timeout: int = 120) -> None:
-        self.token = token
+    ``base_url`` is the API root, e.g. ``https://openrouter.ai/api/v1``; the
+    key is optional (a local LM Studio needs none).
+    """
+
+    def __init__(self, base_url: str, model: str, api_key: str = "", timeout: int = 180) -> None:
+        self.url = base_url.rstrip("/") + "/chat/completions"
         self.model = model
-        self.endpoint = endpoint
+        self.api_key = api_key
         self.timeout = timeout
 
     def chat(self, system: str, user: str) -> str:
+        headers = {
+            "Content-Type": "application/json",
+            # Attribution headers for OpenRouter; other providers ignore them.
+            "X-Title": "docdrift",
+            "HTTP-Referer": "https://github.com/tomdevtech/docdrift",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         try:
             r = requests.post(
-                self.endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.token}",
-                    "Accept": "application/vnd.github+json",
-                    "Content-Type": "application/json",
-                },
+                self.url,
+                headers=headers,
                 json={
                     "model": self.model,
                     "messages": [
@@ -144,35 +150,45 @@ class ModelsClient:
                         {"role": "user", "content": user},
                     ],
                     "temperature": 0.2,
-                    "response_format": {"type": "json_object"},
                 },
                 timeout=self.timeout,
             )
         except requests.exceptions.RequestException as exc:
-            raise ModelsError(f"GitHub Models not reachable: {exc}") from exc
+            raise LLMError(f"LLM not reachable at {self.url}: {exc}") from exc
         if not r.ok:
-            raise ModelsError(f"GitHub Models answered {r.status_code}: {r.text[:300]}")
+            raise LLMError(f"LLM answered {r.status_code}: {r.text[:300]}")
         try:
-            return r.json()["choices"][0]["message"]["content"] or ""
-        except (ValueError, KeyError, IndexError) as exc:
-            raise ModelsError(f"unexpected answer from GitHub Models: {r.text[:300]}") from exc
+            data = r.json()
+        except ValueError as exc:
+            raise LLMError(
+                f"{self.url} did not answer with JSON ({r.text[:100]!r}) - is llm_api_base_url right?"
+            ) from exc
+        try:
+            return data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            error = data.get("error") if isinstance(data, dict) else None
+            raise LLMError(f"unexpected answer from the LLM: {error or str(data)[:300]}") from exc
 
 
 # --- prompt and edits ------------------------------------------------------------
 
 
 def parse_reply(reply: str) -> tuple[list[Edit], str]:
-    """``(edits, reason)`` from the model's JSON; a code fence around it is tolerated."""
-    text = reply.strip()
-    match = re.fullmatch(r"```(?:json)?\s*\n(.*?)\n```", text, flags=re.DOTALL)
-    if match:
-        text = match.group(1)
+    """``(edits, reason)`` from the model's reply.
+
+    Free models do not always return clean JSON: reasoning blocks, code fences and
+    text around the object are tolerated - the outermost ``{...}`` is used.
+    """
+    text = _THINK.sub("", reply).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise LLMError(f"reply contains no JSON object: {_shorten(reply, 200)}")
     try:
-        data = json.loads(text)
+        data = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise ModelsError(f"reply is not JSON: {_shorten(reply, 200)}") from exc
+        raise LLMError(f"reply is not valid JSON: {_shorten(reply, 200)}") from exc
     if not isinstance(data, dict):
-        raise ModelsError("reply is not a JSON object")
+        raise LLMError("reply is not a JSON object")
     edits = [
         Edit(str(e["find"]), str(e.get("replace", "")))
         for e in data.get("edits") or []
@@ -238,35 +254,35 @@ def update_docs(
     *,
     client,
     log: Log = print,
-) -> ModelsResult:
-    """Ask GitHub Models file by file and apply its edits in the working tree.
+) -> LLMResult:
+    """Ask the LLM file by file and apply its edits in the working tree.
 
     Args:
         repo_root: checkout of the merge result; doc files are edited in place.
-        cfg: configuration (``github_docs.models_*``).
+        cfg: configuration (``github_docs.llm_*``).
         task: the task from :func:`docdrift.merge.task.build_copilot_task`.
         pr: the merged pull request.
-        client: object with ``chat(system, user) -> str`` (e.g. :class:`ModelsClient`).
+        client: object with ``chat(system, user) -> str`` (e.g. :class:`LLMClient`).
         log: progress callback.
 
     Raises:
-        ModelsError: GitHub Models failed (rate limit, permissions, bad answer).
+        LLMError: the LLM failed (rate limit, wrong key or URL, unusable answer).
     """
     repo_root = Path(repo_root)
     gd = cfg.github_docs
-    result = ModelsResult()
-    for path in select_files(task, gd.models_max_files):
+    result = LLMResult()
+    for path in select_files(task, gd.llm_max_files):
         file = repo_root / path
         if not file.is_file():
             result.files.append(FileResult(path, skipped="file not found"))
             continue
         content = file.read_text(encoding="utf-8")
-        prompt = build_prompt(task, pr, path, content, gd.models_max_chars)
+        prompt = build_prompt(task, pr, path, content, gd.llm_max_chars)
         if prompt is None:
-            result.files.append(FileResult(path, skipped=f"too large for models_max_chars ({gd.models_max_chars})"))
+            result.files.append(FileResult(path, skipped=f"too large for llm_max_chars ({gd.llm_max_chars})"))
             log(f"{path}: skipped - too large for the prompt")
             continue
-        log(f"{path}: asking {gd.models_model} ...")
+        log(f"{path}: asking {gd.llm_model} ...")
         edits, reason = parse_reply(client.chat(SYSTEM_PROMPT, prompt))
         new, applied, rejected = apply_edits(content, edits)
         if applied:
@@ -277,12 +293,11 @@ def update_docs(
 
 
 __all__ = [
-    "ENDPOINT",
     "Edit",
     "FileResult",
-    "ModelsClient",
-    "ModelsError",
-    "ModelsResult",
+    "LLMClient",
+    "LLMError",
+    "LLMResult",
     "apply_edits",
     "build_prompt",
     "parse_reply",
