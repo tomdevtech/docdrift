@@ -84,3 +84,20 @@ def test_check_reports_crlf_hook_and_projects_vault_path(initialised, tmp_path):
     assert ("error", "llm", "server") in text
     result = CliRunner().invoke(cli.main, ["check", "--no-probe"])
     assert result.exit_code == 1 and "[FAIL]" in result.output
+
+
+def test_status_shows_mode_vault_and_last_commit(initialised, tmp_path):
+    vault = tmp_path / "Vault" / "Projects"
+    vault.mkdir(parents=True)
+    cfg = initialised.root / ".docdrift" / "config.yaml"
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8").replace('"~/ObsidianVault"', f'"{vault.as_posix()}"')
+        .replace('mode: "both"', 'mode: "overview"'),
+        encoding="utf-8",
+    )
+    initialised.commit({"a.py": "x = 1\n"})
+    result = CliRunner().invoke(cli.main, ["status"])
+    assert result.exit_code == 0, result.output
+    assert "mode        overview" in result.output
+    assert str(tmp_path / "Vault" / "Projects" / initialised.root.name) in result.output
+    assert "documented  never" in result.output and "_Architecture.md" in result.output

@@ -5,6 +5,7 @@ Commands:
     docdrift init-github-obsidian   local flow via GitHub Actions instead of the hook
     docdrift init-github-product    merge flow: Copilot keeps README/docs up to date
     docdrift check                  verify config, vault, LLM and hook
+    docdrift status                 show mode, model, vault target and the last documented commit
     docdrift run                    document everything since the last run
     docdrift adr                    draft an ADR for a commit range
     docdrift copilot-task           (CI) build the Copilot issue for a merged pull request
@@ -24,8 +25,10 @@ from pathlib import Path
 import click
 
 from docdrift.core import config as config_module
+from docdrift.core import git_utils
 from docdrift.local import pipeline
-from docdrift.local.state import RunLocked
+from docdrift.local.state import RunLocked, load_state
+from docdrift.local.vault import architecture_note_path, vault_root
 from docdrift.merge import task as merge
 from docdrift.setup import doctor, install
 
@@ -110,6 +113,37 @@ def check(no_probe: bool) -> None:
         click.echo(f"[{marks[f.level]}] {f.topic:<6} {f.message}")
     if any(f.level == "error" for f in findings):
         sys.exit(1)
+
+
+@main.command()
+def status() -> None:
+    """Show mode, model, vault target and the last documented commit (no LLM call)."""
+    root = _find_repo_root()
+    try:
+        cfg = config_module.load_config(root)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    st = load_state(root / ".docdrift" / "state", cfg.repo_name)
+    obs = cfg.obsidian
+    if obs.access_mode == "local" and obs.vault_path:
+        target = str(vault_root(obs.vault_path) / "Projects" / cfg.repo_name)
+    else:
+        target = f"{obs.rest_api_base_url or '(rest_api_base_url missing)'} (REST API)"
+    head = git_utils.get_current_head(root)
+    if not st.last_sha:
+        last = "never - the next run documents the whole repository"
+    elif st.last_sha == head:
+        last = f"{st.last_sha[:8]} (up to date with HEAD)"
+    else:
+        last = f"{st.last_sha[:8]} (HEAD is {head[:8]} - run `docdrift run` to catch up)"
+    click.echo(f"repo        {cfg.repo_name}")
+    click.echo(f"mode        {cfg.mode}")
+    click.echo(f"model       {cfg.model} at {cfg.api_base_url}")
+    click.echo(f"notes       {target}")
+    if cfg.architecture_note:
+        click.echo(f"overview    {architecture_note_path(cfg.repo_name)}")
+    click.echo(f"documented  {last}")
+    click.echo(f"ADR drafts  {len(st.adrs)}")
 
 
 @main.command()
