@@ -44,9 +44,10 @@ adr:
   enabled: true
   threshold: 4                    # minimum significance score; ADRs go to the vault only
 
-github_docs:                      # merge flow (Copilot, product docs only), see `docdrift init-github-product`
+github_docs:                      # merge flow (product docs only), see `docdrift init-github-product`
   enabled: true                   # after a merge: check and update README / docs_paths
-  precheck: true                  # skip merges that cannot affect users (saves Copilot requests)
+  precheck: true                  # skip merges that cannot affect users (saves requests)
+  engine: "copilot"               # copilot (needs a Copilot licence) | github-models (free, rate-limited)
   assignee: "copilot"
   docs_paths:
     - "docs/"

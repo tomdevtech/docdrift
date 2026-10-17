@@ -9,13 +9,14 @@ mode: "both"                          # both | overview (only the HLA note _Arch
 
 obsidian:
   access_mode: "local"
-  vault_path: "G:\\Meine Ablage\\Dokumente\\Vaults\\Documentations\\Projects"
+  vault_path: "Your path"
   rest_api_base_url: ""
   rest_api_key: "${OBSIDIAN_REST_API_KEY}"
 
 github_docs:
   enabled: true
   precheck: true
+  engine: "github-models"         # copilot | github-models (no Copilot licence needed)
   assignee: "copilot"
   docs_paths:
     - "docs/"

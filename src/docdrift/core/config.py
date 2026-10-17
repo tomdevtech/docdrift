@@ -20,6 +20,9 @@ _ENV_VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 #: What the local flow writes: ``per-file`` notes, the ``overview`` (HLA) note, or ``both``.
 MODES = ("both", "overview", "per-file")
 
+#: Who updates the product docs in the merge flow (see :class:`GithubDocsConfig`).
+ENGINES = ("copilot", "github-models")
+
 
 @dataclass
 class ObsidianConfig:
@@ -45,14 +48,23 @@ class GithubDocsConfig:
     the Copilot coding agent to verify and update them in a pull request.
 
     ``enabled``: product-docs task on/off. ``precheck``: skip merges that cannot
-    affect users (``false`` asks Copilot after every merge). ``assignee``:
-    ``copilot`` (the coding agent) or any GitHub login.
+    affect users (``false`` asks after every merge). ``engine``: who updates the
+    docs - ``copilot`` (an issue for the Copilot coding agent, needs a Copilot
+    licence) or ``github-models`` (GitHub Models in the workflow, free with
+    rate limits, opens a pull request itself; see :mod:`docdrift.merge.models`).
+    ``assignee``: for ``copilot``, the agent (``copilot``) or any GitHub login.
+    ``models_*``: for ``github-models``, the model, how many doc files are
+    updated per merge, and the prompt budget per file in characters.
     """
 
     enabled: bool = True
     precheck: bool = True
     assignee: str = "copilot"
     docs_paths: list[str] = field(default_factory=lambda: ["docs/", "README.md"])
+    engine: str = "copilot"
+    models_model: str = "openai/gpt-4.1-mini"
+    models_max_files: int = 3
+    models_max_chars: int = 24000
 
 
 @dataclass
@@ -148,11 +160,18 @@ def load_config(project_root: Path) -> DocdriftConfig:
     )
 
     github_raw = raw.get("github_docs", {}) or {}
+    engine = str(github_raw.get("engine") or "copilot").strip().lower()
+    if engine not in ENGINES:
+        raise ValueError(f"Unknown github_docs.engine {engine!r} ({', '.join(ENGINES)})")
     github_docs = GithubDocsConfig(
         enabled=github_raw.get("enabled", True),
         precheck=github_raw.get("precheck", True),
         assignee=github_raw.get("assignee", "copilot"),
         docs_paths=github_raw.get("docs_paths", ["docs/", "README.md"]),
+        engine=engine,
+        models_model=str(github_raw.get("models_model") or "openai/gpt-4.1-mini"),
+        models_max_files=int(github_raw.get("models_max_files", 3)),
+        models_max_chars=int(github_raw.get("models_max_chars", 24000)),
     )
 
     adr_raw = raw.get("adr", {}) or {}

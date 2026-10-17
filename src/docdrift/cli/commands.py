@@ -8,7 +8,8 @@ Commands:
     docdrift status                 show mode, model, vault target and the last documented commit
     docdrift run                    document everything since the last run
     docdrift adr                    draft an ADR for a commit range
-    docdrift copilot-task           (CI) build the Copilot issue for a merged pull request
+    docdrift copilot-task           (CI) build the docs task (Copilot issue) for a merged pull request
+    docdrift models-docs            (CI) update the docs of a merged pull request with GitHub Models
 
 All logic lives in the feature packages - :mod:`docdrift.local`,
 :mod:`docdrift.merge` and :mod:`docdrift.setup`; this module only parses
@@ -18,6 +19,7 @@ arguments and prints progress.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +31,7 @@ from docdrift.core import git_utils
 from docdrift.local import pipeline
 from docdrift.local.state import RunLocked, load_state
 from docdrift.local.vault import architecture_note_path, vault_root
+from docdrift.merge import models as merge_models
 from docdrift.merge import task as merge
 from docdrift.setup import doctor, install
 
@@ -84,12 +87,15 @@ def init_github_product() -> None:
     target = install.install_workflow(repo_root, "merge", "product-docs-on-merge")
     click.echo(f"Workflow installed: {target}")
     click.echo(
-        "Next steps:\n"
-        "  1. Enable the Copilot coding agent for this repository.\n"
-        "  2. Add a repository secret DOCDRIFT_COPILOT_TOKEN: a personal access token\n"
-        "     (fine-grained: Actions, Contents, Issues, Pull requests = read/write). GitHub only lets\n"
-        "     user tokens assign Copilot; without it the issue is created unassigned.\n"
-        "  3. Commit .docdrift/config.yaml - the workflow reads it."
+        "Next steps - choose github_docs.engine in .docdrift/config.yaml:\n"
+        "  copilot (needs a Copilot Pro/Pro+/Business/Enterprise licence):\n"
+        "    1. Enable the Copilot coding agent for this repository.\n"
+        "    2. Add a repository secret DOCDRIFT_COPILOT_TOKEN: a personal access token\n"
+        "       (fine-grained: Actions, Contents, Issues, Pull requests = read/write). GitHub only lets\n"
+        "       user tokens assign Copilot; without it the issue is created unassigned.\n"
+        "  github-models (free, rate-limited):\n"
+        "    1. Settings > Actions > General: allow GitHub Actions to create pull requests.\n"
+        "  Then commit .docdrift/config.yaml - the workflow reads it."
     )
     try:
         cfg = config_module.load_config(repo_root)
@@ -178,30 +184,33 @@ def adr(from_sha: str | None, to_sha: str | None) -> None:
         raise click.ClickException(str(exc)) from exc
 
 
-@main.command("copilot-task")
-@click.option("--pr", "pr_number", type=int, required=True, help="Number of the merged pull request.")
-@click.option("--base", "base_sha", required=True, help="pull_request.base.sha")
-@click.option("--head", "head_sha", required=True, help="pull_request.head.sha")
-@click.option("--title", default="", help="Title of the pull request.")
-@click.option("--head-ref", default="", help="Branch name of the pull request.")
-@click.option(
-    "--body-file", type=click.Path(dir_okay=False, path_type=Path), default=None,
-    help="File with the pull request description (the ADR rationale comes from it).",
-)
-@click.option(
-    "--output", type=click.Path(dir_okay=False, path_type=Path), required=True,
-    help="Where to write the issue as JSON. Not written when there is nothing to do.",
-)
-def copilot_task(
-    pr_number: int, base_sha: str, head_sha: str, title: str, head_ref: str,
-    body_file: Path | None, output: Path,
-) -> None:
-    """(CI) Check a merged PR and build the Copilot docs issue; no LLM involved."""
+def _pr_options(func):
+    """The merged pull request, as passed by the merge workflow."""
+    options = [
+        click.option("--pr", "pr_number", type=int, required=True, help="Number of the merged pull request."),
+        click.option("--base", "base_sha", required=True, help="pull_request.base.sha"),
+        click.option("--head", "head_sha", required=True, help="pull_request.head.sha"),
+        click.option("--title", default="", help="Title of the pull request."),
+        click.option("--head-ref", default="", help="Branch name of the pull request."),
+        click.option(
+            "--body-file", type=click.Path(dir_okay=False, path_type=Path), default=None,
+            help="File with the pull request description.",
+        ),
+    ]
+    for option in reversed(options):
+        func = option(func)
+    return func
+
+
+def _merge_task(pr_number, base_sha, head_sha, title, head_ref, body_file):
+    """Load the config and build the docs task of a merged pull request."""
     repo_root = _find_repo_root()
     try:
         cfg = config_module.load_config(repo_root)
     except FileNotFoundError as exc:
         raise click.ClickException(f"{exc} Is .docdrift/config.yaml committed?") from exc
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     body = body_file.read_text(encoding="utf-8") if body_file and body_file.exists() else ""
     pr = merge.PullRequest(
@@ -214,14 +223,68 @@ def copilot_task(
         raise click.ClickException(
             f"git failed: {exc.stderr or exc}. The workflow needs fetch-depth: 0 and the PR head."
         ) from exc
+    return repo_root, cfg, pr, result
 
+
+def _github_output(**values: str) -> None:
+    """Pass step outputs to later workflow steps (no-op outside GitHub Actions)."""
+    target = os.environ.get("GITHUB_OUTPUT")
+    if target:
+        with open(target, "a", encoding="utf-8") as f:
+            f.writelines(f"{key}={value}\n" for key, value in values.items())
+
+
+@main.command("copilot-task")
+@_pr_options
+@click.option(
+    "--output", type=click.Path(dir_okay=False, path_type=Path), required=True,
+    help="Where to write the issue as JSON. Not written when there is nothing to do.",
+)
+def copilot_task(
+    pr_number: int, base_sha: str, head_sha: str, title: str, head_ref: str,
+    body_file: Path | None, output: Path,
+) -> None:
+    """(CI) Check a merged PR and build the docs task (Copilot issue); no LLM involved."""
+    _, cfg, _, result = _merge_task(pr_number, base_sha, head_sha, title, head_ref, body_file)
     if output.exists():
         output.unlink()
+    _github_output(engine=cfg.github_docs.engine, task=str(result.task is not None).lower())
     if result.task is None:
         click.echo(f"Nothing to do: {result.reason}.")
         return
     output.write_text(json.dumps(result.task.to_issue(), ensure_ascii=False, indent=2), encoding="utf-8")
-    click.echo(f"Copilot task written to {output}: {result.task.title}")
+    click.echo(f"Docs task written to {output}: {result.task.title}")
+
+
+@main.command("models-docs")
+@_pr_options
+@click.option(
+    "--summary", type=click.Path(dir_okay=False, path_type=Path), required=True,
+    help="Where to write the Markdown summary (pull request body or comment).",
+)
+def models_docs(
+    pr_number: int, base_sha: str, head_sha: str, title: str, head_ref: str,
+    body_file: Path | None, summary: Path,
+) -> None:
+    """(CI) Update the product docs of a merged PR with GitHub Models (needs GITHUB_TOKEN)."""
+    repo_root, cfg, pr, result = _merge_task(pr_number, base_sha, head_sha, title, head_ref, body_file)
+    if summary.exists():
+        summary.unlink()
+    if result.task is None:
+        click.echo(f"Nothing to do: {result.reason}.")
+        _github_output(changed="false", summary="false")
+        return
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        raise click.ClickException("GITHUB_TOKEN is not set (the workflow needs `permissions: models: read`).")
+    client = merge_models.ModelsClient(token, cfg.github_docs.models_model)
+    try:
+        outcome = merge_models.update_docs(repo_root, cfg, result.task, pr, client=client, log=click.echo)
+    except merge_models.ModelsError as exc:
+        raise click.ClickException(str(exc)) from exc
+    summary.write_text(outcome.summary(pr, cfg.github_docs.models_model), encoding="utf-8")
+    _github_output(changed=str(outcome.changed).lower(), summary="true")
+    click.echo("Docs updated - a pull request follows." if outcome.changed else "No documentation update needed.")
 
 
 if __name__ == "__main__":

@@ -3,30 +3,40 @@
 # Merge flow: keeps the product docs (README.md, docs_paths) up to date.
 # After a pull request is merged into main, docdrift computes what changed (git +
 # Python AST, no LLM) and checks whether users could be affected at all. Internal
-# changes stop here. Otherwise the GitHub Copilot coding agent gets an issue: check
-# the docs (with the exact lines that mention changed code), update only what is
-# outdated - or change nothing and say so.
-# Strict separation: Copilot writes product docs only. Technical docs (notes,
+# changes stop here. Otherwise the docs are checked and updated by the engine set
+# in .docdrift/config.yaml (github_docs.engine):
+#   copilot        an issue for the GitHub Copilot coding agent (needs a Copilot
+#                  Pro/Pro+/Business/Enterprise licence); Copilot opens the PR.
+#   github-models  GitHub Models (free, rate-limited) edits the docs right here
+#                  and this workflow opens the PR - or comments on the merged PR
+#                  that no update is needed.
+# Strict separation: only product docs are written. Technical docs (notes,
 # architecture, ADRs) come from the local flow and live in the Obsidian vault.
-# Reviewing Copilot's pull request is the review of the docs.
+# Reviewing the docs pull request is the review of the docs.
 #
 # Setup:
-#   1. Enable the Copilot coding agent for the repository.
-#   2. Secret DOCDRIFT_COPILOT_TOKEN: a personal access token of a user with
-#      Copilot (fine-grained: Actions, Contents, Issues, Pull requests =
-#      read/write). GitHub does not let GITHUB_TOKEN assign Copilot. Without the
-#      secret the issue is created unassigned and you assign Copilot by hand.
-#   3. Repository variable DOCDRIFT_PIP_SPEC: where to install docdrift from,
-#      pinned to a tag or commit, e.g.
-#      "git+https://github.com/<you>/docdrift.git@v0.2.0". Do NOT use plain
-#      "docdrift" - that name on PyPI belongs to a different project. Required,
-#      except in the docdrift repository itself, which installs its own checkout.
-#   4. Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).
+#   copilot:
+#     1. Enable the Copilot coding agent for the repository.
+#     2. Secret DOCDRIFT_COPILOT_TOKEN: a personal access token of a user with
+#        Copilot (fine-grained: Actions, Contents, Issues, Pull requests =
+#        read/write). GitHub does not let GITHUB_TOKEN assign Copilot. Without
+#        the secret, or if the assignment fails, the issue is created unassigned.
+#   github-models:
+#     1. Settings > Actions > General > Workflow permissions: allow GitHub
+#        Actions to create and approve pull requests.
+#   both:
+#     - Repository variable DOCDRIFT_PIP_SPEC: where to install docdrift from,
+#       pinned to a tag or commit, e.g.
+#       "git+https://github.com/<you>/docdrift.git@v1.0.0". Do NOT use plain
+#       "docdrift" - that name on PyPI belongs to a different project. Required,
+#       except in the docdrift repository itself, which installs its own checkout.
+#     - Commit .docdrift/config.yaml (it is read here; the state folder stays ignored).
 #
-# Loops are prevented twice: Copilot's own pull requests (copilot/* branches)
-# are skipped, and documentation files never count as a reason for a task.
+# Loops are prevented twice: the docs pull requests themselves (copilot/* and
+# docdrift/* branches) are skipped, and documentation files never count as a
+# reason for a task.
 
-name: docdrift - product docs on merge (copilot)
+name: docdrift - product docs on merge
 
 on:
   pull_request:
@@ -34,19 +44,27 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
-  issues: write
+  contents: write        # github-models: push the docs branch
+  issues: write          # copilot: create the issue
+  pull-requests: write   # github-models: open the docs PR or comment on the merged PR
+  models: read           # github-models: GitHub Models inference
 
 jobs:
-  copilot-task:
+  docs-task:
     if: >-
       github.event.pull_request.merged == true &&
-      !startsWith(github.event.pull_request.head.ref, 'copilot/')
+      !startsWith(github.event.pull_request.head.ref, 'copilot/') &&
+      !startsWith(github.event.pull_request.head.ref, 'docdrift/')
     runs-on: ubuntu-latest
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # Passed through env, never interpolated into a script (injection-safe).
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,13 +96,9 @@ jobs:
             exit 1
           fi
 
-      - name: Build the Copilot task
+      - name: Build the docs task
+        id: task
         shell: bash
-        env:
-          # Passed through env, never interpolated into the script (injection-safe).
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
           docdrift copilot-task \
@@ -93,23 +107,66 @@ jobs:
             --body-file "$RUNNER_TEMP/pr-body.md" \
             --output "$RUNNER_TEMP/issue.json"
 
+      # --- engine: copilot ----------------------------------------------------------
+
       - name: Create the issue and assign Copilot
+        if: steps.task.outputs.engine == 'copilot' && steps.task.outputs.task == 'true'
         shell: bash  # -eo pipefail
         env:
           COPILOT_TOKEN: ${{ secrets.DOCDRIFT_COPILOT_TOKEN }}
           FALLBACK_TOKEN: ${{ github.token }}
         run: |
           issue="$RUNNER_TEMP/issue.json"
-          if [ ! -f "$issue" ]; then
-            echo "docdrift: nothing to document for this merge."
-            exit 0
-          fi
-          if [ -n "$COPILOT_TOKEN" ]; then
-            GH_TOKEN="$COPILOT_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
-              --input "$issue" --jq '"Issue created: " + .html_url'
-          else
-            echo "::warning::DOCDRIFT_COPILOT_TOKEN is not set - the issue is created without assignee. Assign it to Copilot manually."
+          unassigned() {
             python -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("assignees",None); print(json.dumps(d))' "$issue" \
               | GH_TOKEN="$FALLBACK_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
                   --input - --jq '"Issue created: " + .html_url'
+          }
+          if [ -z "$COPILOT_TOKEN" ]; then
+            echo "::warning::DOCDRIFT_COPILOT_TOKEN is not set - the issue is created without assignee. Assign it to Copilot manually."
+            unassigned
+          elif ! GH_TOKEN="$COPILOT_TOKEN" gh api --method POST "repos/$GITHUB_REPOSITORY/issues" \
+                --input "$issue" --jq '"Issue created: " + .html_url'; then
+            echo "::warning::Copilot could not be assigned (no Copilot licence or agent disabled?) - the issue is created without assignee. Consider github_docs.engine: github-models."
+            unassigned
           fi
+
+      # --- engine: github-models ----------------------------------------------------
+
+      - name: Update the docs with GitHub Models
+        id: models
+        if: steps.task.outputs.engine == 'github-models' && steps.task.outputs.task == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          docdrift models-docs \
+            --pr "$PR_NUMBER" --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --title "$PR_TITLE" --head-ref "$HEAD_REF" \
+            --body-file "$RUNNER_TEMP/pr-body.md" \
+            --summary "$RUNNER_TEMP/summary.md"
+
+      - name: Open the docs pull request
+        if: steps.models.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="docdrift/docs-pr-${PR_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -a -m "docs: update product docs for #${PR_NUMBER}"
+          git push --force origin "$branch"
+          if ! gh pr create --base "$BASE_REF" --head "$branch" \
+                --title "docs: update product docs for #${PR_NUMBER}" \
+                --body-file "$RUNNER_TEMP/summary.md"; then
+            echo "::warning::Branch $branch was pushed, but the pull request could not be opened. Allow GitHub Actions to create pull requests (Settings > Actions > General) or open it by hand."
+          fi
+
+      - name: Report that no update is needed
+        if: steps.models.outputs.changed == 'false' && steps.models.outputs.summary == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/summary.md"

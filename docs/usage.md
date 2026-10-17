@@ -25,6 +25,9 @@ docdrift check           # config, vault path, LLM server + model, context size,
 docdrift run             # documents the whole repository on the first run
 ```
 
+`docdrift status` shows at any time, without an LLM call, the mode, the model, where
+the notes go and the last documented commit (and whether `HEAD` is ahead of it).
+
 Do the first run in the foreground: it sends every file to the model, which can take
 a while on a large repository (progress is shown as `[n/total]`). If it is interrupted
 or some files fail, just run it again - notes that are already current are skipped.
@@ -83,19 +86,22 @@ Write your own remarks **below** `<!-- AUTO-DOC-END -->`; they are kept.
 
 - **internal change** (bug fix inside an undocumented function, private code, tests):
   the workflow log says "Nothing to do" and lists why - no issue.
-- **change users could notice:** an issue for Copilot with the hints and the exact
-  doc lines that mention changed code. Copilot's pull request either updates the
-  outdated parts or says "No documentation update needed" - then just close it.
+- **change users could notice**, with `engine: copilot`: an issue for Copilot with the
+  hints and the exact doc lines that mention changed code. Copilot's pull request either
+  updates the outdated parts or says "No documentation update needed" - then just close it.
+- **change users could notice**, with `engine: github-models`: GitHub Models checks up
+  to `models_max_files` doc files and the workflow opens a pull request from
+  `docdrift/docs-pr-<n>`, or comments "No documentation update needed" on the merged PR.
 
 Tips: write `feat:` (or `!` for breaking) in the PR title when behaviour changes
 behind an unchanged signature, so the pre-check notices. Put user-facing context in
-the PR description; Copilot reads it. Copilot only edits `README.md` and `docs_paths` -
+the PR description; Copilot reads it. Only `README.md` and `docs_paths` are edited -
 if `docs_paths` contains technical pages, narrow it (e.g. to `docs/user/`).
 
 ## ADR workflow
 
 ADRs are technical documentation, so they live only in the vault and are written only
-by the local model. The merge flow (Copilot) never touches them.
+by the local model. The merge flow never touches them.
 
 1. A push with a significant change creates `ADR/NNNN-title.md` (`status: proposed`).
 2. Open it, replace the "(rationale not recorded - please confirm)" spots with the real
@@ -124,6 +130,8 @@ Copy a file from `src/docdrift/local/playbooks/` to `.docdrift/playbooks/`, set
 | A file is never documented | matches `ignore`, is binary, or only formatting/comments changed |
 | `ADR draft failed` | model ignored the format; retry with `docdrift adr --from <sha>` or use a larger model |
 | REST API errors | Obsidian must be open; see `obsidian-rest-api-setup.md` |
-| Merge issue is not assigned to Copilot | secret `DOCDRIFT_COPILOT_TOKEN` missing, or the coding agent is not enabled; see `copilot-merge-setup.md` |
-| Merge workflow logs "Nothing to do" | Copilot PR, docs-only change, or only internal changes (pre-check); the log lists the hints it found |
+| Merge issue is not assigned to Copilot | secret `DOCDRIFT_COPILOT_TOKEN` missing, no Copilot Pro/Pro+/Business/Enterprise licence, or the coding agent is not enabled; without a licence use `engine: github-models` |
+| Merge workflow logs "Nothing to do" | docs PR (`copilot/*`, `docdrift/*`), docs-only change, or only internal changes (pre-check); the log lists the hints it found |
 | Copilot opened a PR with "No documentation update needed" | the pre-check saw a hint, Copilot found the docs still correct - close the PR |
+| `github-models`: "GitHub Models answered 429" | free rate limit reached; re-run the workflow later or lower `models_max_files` |
+| `github-models`: branch pushed, but no PR | allow GitHub Actions to create pull requests (Settings > Actions > General) |
